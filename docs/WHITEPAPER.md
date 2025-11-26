@@ -361,6 +361,41 @@ This section defines a path to unlock **community-driven rule diversity** and sa
 ### 15.5 Metrics
 - **TTFR** improvement vs. baseline, **throughput** with N workers, **P95/P99** decode, **decoder breakage rate** under rotation.
 
+### 15.6 Critical‑Fragment Obfuscation (Selective Partial Protection)
+
+**Idea:** obfuscate a **very small portion** (≈0.5–3% bytes) that is **structurally critical** to decoding/visual quality, then restore it client‑side in the framed pipeline. This preserves **throughput** and **parallelism** while making CDN‑level restreaming impossible without the rule.
+
+**Video (MP4/CMAF/HLS/DASH):**  
+- **Init segment**: lightly obfuscate parts of **parameter sets** (e.g., SPS/PPS for AVC/HEVC, sequence headers/OBUs for AV1).  
+- **Key frames (IDR)**: obfuscate a few **tiles/macroblocks** at the start of each IDR or selected **slice header** fields.  
+- **Sample description / `stsd`**: minimal perturbation that invalidates naive decoders until client restores.
+
+**Images (JPEG/WebP/AVIF):**  
+- **JPEG**: obfuscate a handful of **MCU** at scan start, or perturb **Huffman/Quant tables** with a deterministic, invertible delta.  
+- **WebP/AVIF**: target a small set of **OBU/Chunk headers** or the first **tile** in each region.
+
+**Client restoration:** performed **per‑chunk** in Web Workers/JSI/WASM (block‑local), then fed to MSE (video) or `Blob URL` (image).
+
+**When to use:** environments you control end‑to‑end (no CDN recompression) or alongside **15.1 Segment‑Envelope** as an inner layer for high‑value routes.
+
+**Caveats:** ensure compatibility with players; validate via **Normalization Gauntlet** and device lab before rollout.
+
+### 15.7 Live Event Anti‑Restream Profile (optional)
+
+**Goal:** make near‑realtime restreaming economically unviable by coupling **time‑bucket rotation** with **heterogeneous per‑chunk rules** and (optionally) **critical‑fragment obfuscation**.
+
+**Profile:**  
+1. **Per‑session bootstrap** (signed, no‑store).  
+2. **Per‑segment envelope** (2–4 s segments) with `super‑header`, `rule_map`, and **HMAC(meta‖chunkIndex‖bindings)**.  
+3. **Heterogeneous‑by‑chunk**: pool of 3–8 rules, selection deterministic from `(seed, chunkIndex, tsBucket)`.  
+4. **Rotation by time‑bucket** (e.g., every 15–30 s).  
+5. **Optional critical fragments**: touch init + IDR boundaries (≤3% bytes) to break naive playback.  
+6. **Bindings**: include `(method|pathHash|variant|sessionIdHash|tsBucket)` in meta/HMAC.  
+7. **Watermark (optional)**: per‑session tracers in metadata/offset layout for leak attribution.
+
+**Outcome:** legitimate clients decode **in parallel** with low **TTFR**, while attackers accumulate **latency debt** (find bootstrap → build N decoders → track rotations), causing restreams to lag or fail.
+
+---
 
 ## 16. Temporal Polymorphism & Rule Injection Diversity
 

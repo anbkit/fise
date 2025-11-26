@@ -84,6 +84,32 @@ See whitepaper §4.7, §6.7, §8.3, §9.4.
 
 ---
 
+## 🎬 Media Profiles
+
+### 1) Segment‑Envelope (container‑preserving)
+Wrap **video segments** (HLS/DASH/CMAF) and **image files/tiles** with FISE; client unwraps in workers and feeds raw bytes to MSE (video) or `Blob` (image).  
+- **Pros**: CDN‑friendly, highly robust, easy to deploy.  
+- **Use for**: baseline protection and anti‑hotlink/anti‑bulk fetch.
+
+### 2) Critical‑Fragment Obfuscation (selective partial protection)
+Obfuscate **0.5–3%** bytes that are **structurally critical**, then restore client‑side:
+- **Video**: touch **init** (SPS/PPS, seq hdr/OBU) + selective **IDR tiles/slice header**.  
+- **Images**: **JPEG MCU** start, **Huffman/Quant** deltas; **WebP/AVIF** small header/tile perturbations.
+- **Client**: restore per‑chunk via workers/JSI/WASM → MSE/Blob.
+- **Notes**: validate against recompression; pair with Segment‑Envelope when CDN may mutate assets.
+
+### 3) Live Event Anti‑Restream Profile
+- Per‑session bootstrap (signed, no‑store)  
+- Per‑segment envelope (2–4s) + **HMAC(meta‖chunkIndex‖bindings)**  
+- Pool of 3–8 rules, **deterministic selection** per chunk  
+- **Time‑bucket rotation** (e.g., every 15–30s)  
+- Optional **critical fragments** on init + IDR  
+- Optional **watermark** per session
+
+**Effect**: legit clients play immediately; restreamers accumulate latency debt (find bootstrap → craft decoders → chase rotations).
+
+---
+
 ## 📦 Installation
 
 ```bash
@@ -183,6 +209,7 @@ It is a **semantic protection layer** built for:
 - preventing naive dataset cloning  
 
 ---
+
 
 ## 🌱 The Future Direction of FISE (Rule Ecosystem)
 
