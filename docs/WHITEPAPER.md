@@ -15,7 +15,7 @@ Modern web apps must render meaningful JSON on the client. HTTPS protects transp
 
 FISE complements, not replaces: TLS, authentication/authorization, backend rate-limits, or cryptography for secrets. It is best suited where **data itself is the asset** (e.g., curated POI, pricing, recommendations, AI metadata).
 
-FISE also supports **chunked, block-local pipelines** that enable **parallel encode/decode and streaming**, allowing clients to begin rendering **before** the full payload arrives.
+FISE also supports **chunked, block-local pipelines** that enable **parallel encode/decode and streaming**, allowing clients to begin rendering **before** the full payload arrives. It generalizes to **media** (images/video) via framed, chunked pipelines that preserve codec/container compatibility while enabling parallel unwrap on the client.
 
 ---
 
@@ -56,7 +56,7 @@ A few fetch calls and pagination often suffice to replicate valuable datasets at
 2. **Security through diversity** — each app/session/request may use a different rule-set.  
 3. **Infinite customization** — salts, offsets, metadata channels, ciphers (optional), assembly strategies.  
 4. **Semantic obfuscation** — protect *meaning*, not transport.  
-5. **Cheap to run, costly to reverse** — microsecond-level ops; no universal, protocol-level decoder.  
+5. **Cheap to run, costly to reverse** — microsecond-level ops; no protocol-level universal decoder.  
 6. **Streaming & Parallel-ready** — rules can be designed block-local, enabling **per-chunk** encode/decode and multi-core execution.
 
 ---
@@ -98,6 +98,12 @@ A string/byte stream with **no fixed structure** shared across deployments. Ther
 - Payload is split into **chunks**; each chunk carries **local metadata** (rule id, offsets) and optional **HMAC bindings** (server-side verify).  
 - Interleave/drift parameters derive from **(ruleset, chunkIndex, bindings)** → **no global dependency**, so chunks can be **encoded/decoded in parallel**.  
 - A **super-header** specifies framing (`version`, `nChunks`, `flags`).
+
+### 4.8 Heterogeneous Per‑Chunk Rules (optional)
+- Each chunk MAY select a **different rule** from a bounded pool (e.g., 3–8) to increase diversity.
+- Selection is **deterministic** from bindings/seed: `rule_idx = PRNG(seed, chunkIndex) mod K`.
+- A **super‑header** carries a compact `rule_map`; each chunk stores `rule_idx` instead of full ids.
+- Preserve **block‑local semantics** so chunks decode independently; carry only **tiny deterministic state** if required.
 
 ---
 
@@ -148,6 +154,11 @@ Attackers can run your app, hook decode functions, or dump plaintext **after** d
 - **Anti-replay**: include request/session bindings and **timestamp buckets** in each chunk’s meta.  
 - **Boundary hiding**: optional decoy/padding and variable chunk sizes.
 
+### 6.8 Heterogeneous Rule Pools
+- Limit pool size (e.g., 3–8) to bound code/metadata overhead and improve worker/WASM cache locality.
+- Include `rule_idx` and `chunkIndex` under **server HMAC** to prevent splice/reorder attacks.
+- Track field reliability per `rule_idx`; rotate out rules with poor normalization fitness.
+
 > **Claim wording**: We do **not** claim “impossible to decode.” We claim **no protocol-level universal decoder**, and **significant per-target cost** under rotation, validation, and normalization-resistant channels.
 
 ---
@@ -180,7 +191,7 @@ Attackers can run your app, hook decode functions, or dump plaintext **after** d
 - Measure **end-to-end** impact (server encode → client decode → render).
 
 ### 8.3 Parallel & Streaming Benchmarks
-Report **TTFR** (time-to-first-render) and **throughput** with N workers (server Node workers; client Web Workers/WASM). Typical chunk sizes: **8–32 KB**. Compare streaming vs. non-streaming P95/P99.
+Report **TTFR** (time-to-first-render) and **throughput** with N workers (server Node workers; client Web Workers/WASM). Typical chunk sizes: **8–32 KB** for JSON; **128–512 KB** for media segments. Compare streaming vs. non-streaming P95/P99.
 
 ---
 
@@ -206,6 +217,12 @@ Report **TTFR** (time-to-first-render) and **throughput** with N workers (server
 - Keep rules **block-local** (or carry **tiny state**) to preserve parallel decode.  
 - Validate against **Normalization Gauntlet** (gzip/brotli, Unicode NFC/NFKC, CDN).
 
+### 9.5 Media‑Specific Guidance
+- **Video (HLS/DASH/CMAF)**: wrap **segments**, not manifests. Bindings include variant id and timestamp buckets. Client unwraps in workers then appends raw bytes to MSE.
+- **Images**: whole‑file wrap (Blob URL) or **tile‑based** wrap for deep‑zoom; avoid CDN recompression on enveloped assets.
+- **CDN/Optimizer**: disable transforms (recompress/minify) on enveloped media; validate via Gauntlet.
+- **Chunk sizes**: 128–512 KB per segment chunk on web; schedule workers to group identical `rule_idx` for cache locality.
+
 ---
 
 ## 10. Use Cases
@@ -213,6 +230,7 @@ Report **TTFR** (time-to-first-render) and **throughput** with N workers (server
 - Web/API response protection where **data is the product**: POI/travel, pricing, recommendations, AI metadata.  
 - Admin dashboards/mobile apps exposing sensitive analytics (non-secret).  
 - Aggregation portals (news/content) reducing bulk harvesting.
+- Media delivery: **per‑segment video** (HLS/DASH/CMAF) and **image tiles/files** wrapped in FISE for anti‑bulk scraping while preserving player/decoder compatibility.
 
 **Not recommended** for secrets/PII/keys—use standard cryptography and access control.
 
@@ -338,7 +356,7 @@ Automated suite to stress channels and layout:
 - **Score**: aggregate survival metrics + integrity checks; published in Registry.
 
 ### 14.6 Rule Builder (UI + AI)
-- **Block Editor**: drag/drop operators; live preview encode/decode on sample JSON.
+- **Block Editor**: drag/drop operators; live preview encode/decode on sample JSON (and media headers).
 - **Constraints**: budget sliders, mobile target (P95 ms), allowed channels.
 - **Gauntlet in the loop**: run and show score immediately.
 - **AI Copilot**: prompt to generate variants under constraints (*e.g.*, “+10% gauntlet score, P95 < 1 ms”).
@@ -359,7 +377,27 @@ Automated suite to stress channels and layout:
 - v0.3: WASM fast-path; AI rule-mutation loop; telemetry-backed fitness.
 - v1.0: Rule Builder stable; signed packages; enterprise rotation policies.
 
-### 14.10 FISE-Framed Profile
-A standard profile for chunked streaming: header (`version`, `ruleset`, `nChunks`), per-chunk meta (bindings, offsets, HMAC), recommended chunk sizes, and **Registry tags**: `framed`, `streaming-ready`, `mobile-fast`.
+---
 
-> **Takeaway**: The ecosystem turns FISE from a library into a **platform**—safe programmability, verifiable quality, and community-driven diversity without exposing secrets on the client.
+## 15. FISE‑Media Profile (images & video)
+
+**Goal:** container/codec‑preserving envelopes with **parallel, chunked unwrap** on the client.
+
+### 15.1 Segment‑Envelope (recommended)
+- **Video**: apply FISE per **segment** (`.ts`, `.mp4`, CMAF). Super‑header announces `version`, `nChunks`, `rule_map`. Each chunk carries `rule_idx`, `chunkIndex`, `len`, bindings, and **HMAC(server)**.
+- **Client flow**: `fetch(segment) → WebWorker.decodeFise(chunked) → appendBuffer(bytes)` (MSE). Start render as soon as first chunk is decoded.
+- **Images**: wrap **entire file**; decode to `Blob` then `img.src=URL.createObjectURL(blob)`. For deep‑zoom, wrap **per‑tile** for higher parallelism and per‑tile rotation.
+
+### 15.2 Heterogeneous per‑chunk rules
+- Deterministic selection from seed/bindings; keep pool small (3–8). Optimize scheduler to batch by `rule_idx` to reduce JIT/WASM thrash.
+
+### 15.3 Integrity & Anti‑replay
+- Include `(rule_idx || chunkIndex || len || bindings)` in **HMAC** (server key only). Bindings cover `method|path|variant|tsBucket`.
+- Optional decoy/padding and variable chunk sizes to hide internal boundaries.
+
+### 15.4 Compatibility & Gauntlet
+- Validate against gzip/brotli, Unicode normalization, proxy/CDN mutations, and platform image/video pipelines.
+- Disallow CDN recompression on enveloped assets; publish Gauntlet score in Registry metadata.
+
+### 15.5 Metrics
+- **TTFR** improvement vs. baseline, **throughput** with N workers, **P95/P99** decode, **decoder breakage rate** under rotation.
