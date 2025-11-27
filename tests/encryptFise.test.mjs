@@ -79,28 +79,27 @@ test("encryptFise - with timestampMinutes option", () => {
 
 test("encryptFise - with custom salt length range", () => {
     const plaintext = "Hello, world!";
-    const encrypted = encryptFise(plaintext, xorCipher, defaultRules, {
-        minSaltLength: 15,
-        maxSaltLength: 20
-    });
-    const decrypted = decryptFise(encrypted, xorCipher, defaultRules);
+    const customRules = {
+        ...defaultRules,
+        saltRange: { min: 15, max: 20 }
+    };
+    const encrypted = encryptFise(plaintext, xorCipher, customRules);
+    const decrypted = decryptFise(encrypted, xorCipher, customRules);
 
     assert.strictEqual(decrypted, plaintext);
 });
 
-test("encryptFise - error: maxSaltLength < minSaltLength", () => {
+test("encryptFise - with custom salt range in rules", () => {
     const plaintext = "Hello, world!";
-    assert.throws(
-        () => {
-            encryptFise(plaintext, xorCipher, defaultRules, {
-                minSaltLength: 20,
-                maxSaltLength: 10
-            });
-        },
-        {
-            message: "FISE: maxSaltLength must be >= minSaltLength."
-        }
-    );
+    const customRules = {
+        ...defaultRules,
+        saltRange: { min: 20, max: 30 }
+    };
+
+    const encrypted = encryptFise(plaintext, xorCipher, customRules);
+    const decrypted = decryptFise(encrypted, xorCipher, customRules);
+
+    assert.strictEqual(decrypted, plaintext);
 });
 
 test("decryptFise - error: invalid envelope", () => {

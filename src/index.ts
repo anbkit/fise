@@ -7,7 +7,8 @@
 export { encryptFise, decryptFise } from "./encryptFise.js";
 export { xorCipher } from "./core/xorCipher.js";
 export { defaultRules } from "./rules/defaultRules.js";
-export { scanningRulesExample } from "./rules/scanningRules.example.js";
+export { FiseBuilderInstance } from "./rules/builder.instance.js";
+export { FiseBuilder } from "./rules/builder.js";
 
 // Export types
 export type {

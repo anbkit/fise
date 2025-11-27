@@ -58,14 +58,18 @@ test("integration - with timestamp context", () => {
 test("integration - different salt length ranges", () => {
 	const plaintext = "Test with custom salt range";
 	const ranges = [
-		{ minSaltLength: 10, maxSaltLength: 15 },
-		{ minSaltLength: 20, maxSaltLength: 25 },
-		{ minSaltLength: 15, maxSaltLength: 15 } // Same min and max
+		{ min: 10, max: 15 },
+		{ min: 20, max: 25 },
+		{ min: 15, max: 15 } // Same min and max
 	];
 
 	for (const range of ranges) {
-		const encrypted = encryptFise(plaintext, xorCipher, defaultRules, range);
-		const decrypted = decryptFise(encrypted, xorCipher, defaultRules);
+		const customRules = {
+			...defaultRules,
+			saltRange: range
+		};
+		const encrypted = encryptFise(plaintext, xorCipher, customRules);
+		const decrypted = decryptFise(encrypted, xorCipher, customRules);
 
 		assert.strictEqual(decrypted, plaintext);
 	}

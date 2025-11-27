@@ -149,44 +149,149 @@ yarn add fise
 
 ---
 
+## 🚀 Quick Start
+
+**New to FISE?** Start here: **[Quick Start Guide](./docs/QUICK_START.md)** ⚡
+
+**Any developer can write their unique rules** - this is FISE's superpower! The Quick Start guide shows how easy it is - just copy `defaultRules` and modify the offset function!
+
+FISE is incredibly simple - you only need **3 security points**. Here's a complete example:
+
+**Rules definition (shared between backend and frontend):**
+
+```typescript
+// rules.ts - Shared between backend and frontend
+import { defaultRules } from "fise";
+
+// Just copy defaultRules and modify the offset!
+export const myRules = {
+  ...defaultRules,
+  offset(c, ctx) {
+    // Your unique offset - just change the multiplier/modulo!
+    const t = ctx.timestampMinutes ?? 0;
+    return (c.length * 13 + (t % 17)) % c.length; // Different primes!
+  }
+};
+```
+
+**Backend (encrypt):**
+
+```typescript
+// backend/api/data.ts
+import { encryptFise, xorCipher } from "fise";
+import { myRules } from "../rules.js";
+
+app.get('/api/data', (req, res) => {
+  const plaintext = "Hello, World!";
+  const encrypted = encryptFise(plaintext, xorCipher, myRules);
+  // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
+  // (sample base64-encoded output - actual encrypted text will vary due to random salt)
+  
+  res.json({ data: encrypted });
+});
+```
+
+**Frontend (decrypt):**
+
+```typescript
+// frontend/services/data.ts
+import { decryptFise, xorCipher } from "fise";
+import { myRules } from "../rules.js";
+
+const { data: encrypted } = await fetch('/api/data').then(r => r.json());
+// encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
+const decrypted = decryptFise(encrypted, xorCipher, myRules);
+// decrypted: "Hello, World!" (decrypted plaintext)
+console.log(decrypted); // "Hello, World!"
+```
+
+That's it! Everything else is automated. 
+
+**Want more options?** Use `FiseBuilder` presets for quick rule generation:
+```typescript
+import { FiseBuilder } from "fise";
+export const rules = FiseBuilder.defaults().build();
+// or FiseBuilder.hex(), FiseBuilder.base62(), etc.
+```
+
+See [Quick Start Guide](./docs/QUICK_START.md) for more examples and patterns.
+
 ## 🚀 Basic Usage
 
-```ts
-import { encryptFise, decryptFise, xorCipher, defaultRules } from "fise";
+### Simple Example
 
-// Encrypt
-const plaintext = "Hello, world!";
-const encrypted = encryptFise(plaintext, xorCipher, defaultRules);
+**Backend (encrypt):**
 
-// Decrypt
+```typescript
+// backend/api/simple.ts
+import { encryptFise, xorCipher, defaultRules } from "fise";
+
+app.get('/api/simple', (req, res) => {
+  const plaintext = "Hello, world!";
+  const encrypted = encryptFise(plaintext, xorCipher, defaultRules);
+  // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
+  // (sample base64-encoded output - actual encrypted text will vary due to random salt)
+  
+  res.json({ data: encrypted });
+});
+```
+
+**Frontend (decrypt):**
+
+```typescript
+// frontend/services/simple.ts
+import { decryptFise, xorCipher, defaultRules } from "fise";
+
+const { data: encrypted } = await fetch('/api/simple').then(r => r.json());
+// encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
 const decrypted = decryptFise(encrypted, xorCipher, defaultRules);
-
+// decrypted: "Hello, world!" (decrypted plaintext)
 console.log(decrypted); // "Hello, world!"
 ```
 
-### With Options
+### With Timestamp Options
 
-```ts
-import { encryptFise, decryptFise, xorCipher, defaultRules } from "fise";
+**Backend (encrypt with timestamp):**
 
-// Encrypt with custom salt length and timestamp
-const encrypted = encryptFise(
-	JSON.stringify({ hello: "world" }),
-	xorCipher,
-	defaultRules,
-	{
-		minSaltLength: 15,
-		maxSaltLength: 25,
-		timestampMinutes: 12345,
-	}
-);
+```typescript
+// backend/api/timestamp.ts
+import { encryptFise, xorCipher, defaultRules } from "fise";
 
-// Decrypt (timestamp must match)
-const decrypted = decryptFise(encrypted, xorCipher, defaultRules, {
-	timestampMinutes: 12345,
+app.get('/api/data', (req, res) => {
+  const data = { hello: "world", timestamp: Date.now() };
+  const timestampMinutes = Math.floor(Date.now() / 60000);
+  
+  const encrypted = encryptFise(
+    JSON.stringify(data),
+    xorCipher,
+    defaultRules,
+    {
+      timestampMinutes
+    }
+  );
+  // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
+  // (sample base64-encoded output - actual encrypted text will vary due to random salt)
+  
+  res.json({ data: encrypted });
 });
+```
 
-console.log(JSON.parse(decrypted)); // { hello: "world" }
+**Frontend (decrypt with matching timestamp):**
+
+```typescript
+// frontend/services/data.ts
+import { decryptFise, xorCipher, defaultRules } from "fise";
+
+const { data: encrypted } = await fetch('/api/data').then(r => r.json());
+// encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
+const timestampMinutes = Math.floor(Date.now() / 60000);
+
+const decrypted = decryptFise(encrypted, xorCipher, defaultRules, {
+  timestampMinutes
+});
+// decrypted: '{"hello":"world","timestamp":1234567890}' (decrypted JSON string)
+const data = JSON.parse(decrypted);
+console.log(data); // { hello: "world", timestamp: 1234567890 }
 ```
 
 > Server‑side may add **HMAC verification** on metadata (key stays on server) to reject tamper/replay. See `docs/SECURITY.md`.
@@ -205,6 +310,8 @@ A FISE transformation pipeline includes:
 6. Final packed string
 
 Every stage is customizable; **rotation** is strongly recommended.
+
+> 📖 For complete technical details, see the [**FISE Whitepaper**](./docs/WHITEPAPER.md) (v1.0)
 
 ---
 
@@ -234,34 +341,43 @@ It is a **semantic protection layer** built for:
 
 ---
 
-## 🌐 Platform Profiles & Multi‑Language Support
-
-Core FISE is dependency‑free, linear byte/byte‑string ops (O(n)), making it portable across platforms and languages.
-
-### Profiles (reference)
-
--   **Web**: `web-core` (JS), `web-wasm` (optional fast‑path), `media-segment-envelope`, `media-critical-fragment` (opt‑in)
--   **React Native**: `rn-jsi` (C++/Rust core via JSI) + JS shim
--   **Edge Runtimes**: ESM build (CF Workers/Deno/Bun/Vercel Edge), single‑thread fallback ok
--   **TV/IoT**: WebView targets (Tizen/webOS/Android TV) or static libs for embedded
--   **Native**: iOS (Swift Package + C/C++/Rust), Android (AAR + JNI), desktop (C++/Rust, Electron addon)
-
-### Multi‑Language Roadmap
-
--   **JavaScript/TypeScript** (reference impl) ✅
--   **Rust** core + WASM bindings (optional fast‑path) 🛠
--   **Go** (cgo or pure) 🛠
--   **Swift/Kotlin** (mobile native) 🛠
--   **C/C++** static library (embedded/desktop) 🛠
--   **Python** bindings (for tooling/tests) 🛠
-
-All implementations must pass the **Golden Test Suite** (byte‑for‑byte parity) and the **Normalization Gauntlet** (gzip/brotli, NFC/NFKC, proxy/CDN rewrites).
-
----
-
-## 🌱 The Future Direction of FISE (Rule Ecosystem)
+## 🌱 The Future Direction of FISE
 
 FISE is not just a library — it is evolving into a **platform** for creating, sharing, and generating rule‑based pipelines.
+
+### 🌐 Multi-Language & Multi-Platform Support
+
+Core FISE is dependency‑free, linear byte/byte‑string ops (O(n)), making it portable across platforms and languages. Since FISE only requires **3 simple methods** (`offset`, `encodeLength`, `decodeLength`), it can be easily implemented in:
+
+**Backend Languages:**
+-   **JavaScript/TypeScript** ✅ (reference implementation)
+-   **Python** 🛠 (for Django, Flask, FastAPI)
+-   **Go** 🛠 (for high-performance APIs)
+-   **Rust** 🛠 (for maximum performance, WASM bindings)
+-   **Java/Kotlin** 🛠 (for Spring Boot, Android)
+-   **PHP** 🛠 (for Laravel, Symfony)
+-   **Ruby** 🛠 (for Rails)
+-   **C#/.NET** 🛠 (for ASP.NET)
+-   **C/C++** 🛠 (static library for embedded/desktop)
+
+**Client Platforms:**
+-   **Web** ✅ (JavaScript/TypeScript)
+-   **WebAssembly** 🛠 (for Smart TV, embedded devices, high-performance web)
+-   **React Native** 🛠 (via JSI or JS bridge)
+-   **iOS (Swift)** 🛠 (native implementation)
+-   **Android (Kotlin/Java)** 🛠 (native implementation)
+-   **Flutter (Dart)** 🛠
+-   **Desktop** 🛠 (Electron, Tauri)
+-   **Smart TV** 🛠 (Tizen, webOS, Android TV via WebAssembly or native)
+-   **Edge Runtimes** 🛠 (CF Workers/Deno/Bun/Vercel Edge)
+
+**Key Benefits:**
+-   Same rules work across all implementations
+-   Simple to port — just implement 3 methods
+-   No complex dependencies
+-   Fast and lightweight
+
+All implementations must maintain **byte-for-byte compatibility** with the reference implementation to ensure rules work across all platforms. See the [**Golden Test Suite**](./docs/WHITEPAPER.md) requirements.
 
 ### 🧩 Community Rule Ecosystem (Planned)
 

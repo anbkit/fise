@@ -1,4 +1,5 @@
 import { randomSalt } from "./core/utils.js";
+import { normalizeFiseRules } from "./core/normalizeFiseRules.js";
 import { EncryptOptions, FiseCipher, FiseContext, FiseRules } from "./types.js";
 
 /**
@@ -6,10 +7,11 @@ import { EncryptOptions, FiseCipher, FiseContext, FiseRules } from "./types.js";
  * 
  * @param plaintext - The string to encrypt
  * @param cipher - The cipher implementation to use (e.g., xorCipher)
- * @param rules - The rules implementation that defines encoding/offset behavior
- * @param options - Optional encryption options (salt length range, timestamp)
+ * @param rules - The rules implementation that defines encoding/offset behavior.
+ *                Only requires offset, encodeLength, and decodeLength (3 security points).
+ *                Everything else is optional and will be automated.
+ * @param options - Optional encryption options (timestamp)
  * @returns The encrypted envelope string
- * @throws Error if options are invalid (e.g., maxSaltLength < minSaltLength)
  */
 export function encryptFise(
 	plaintext: string,
@@ -17,26 +19,23 @@ export function encryptFise(
 	rules: FiseRules,
 	options: EncryptOptions = {}
 ): string {
-	const {
-		minSaltLength = 10,
-		maxSaltLength = 32,
-		timestampMinutes
-	} = options;
+	// Normalize rules to fill in optional methods with defaults
+	const fullRules = normalizeFiseRules(rules);
 
-	if (maxSaltLength < minSaltLength) {
-		throw new Error("FISE: maxSaltLength must be >= minSaltLength.");
-	}
+	// Use salt range from rules (default: 10-99)
+	const saltRange = rules.saltRange ?? { min: 10, max: 99 };
+	const timestampMinutes = options.timestampMinutes;
 
-	const range = maxSaltLength - minSaltLength + 1;
+	const range = saltRange.max - saltRange.min + 1;
 	const saltLen =
-		minSaltLength + Math.floor(Math.random() * Math.max(range, 1));
+		saltRange.min + Math.floor(Math.random() * Math.max(range, 1));
 
 	const salt = randomSalt(saltLen);
 	const ctx: FiseContext = { timestampMinutes, saltLength: saltLen };
 
 	const cipherText = cipher.encrypt(plaintext, salt);
-	const encodedLen = rules.encodeLength(saltLen, ctx);
-	const offsetRaw = rules.offset(cipherText, ctx);
+	const encodedLen = fullRules.encodeLength(saltLen, ctx);
+	const offsetRaw = fullRules.offset(cipherText, ctx);
 
 	const offset = Math.max(0, Math.min(offsetRaw, cipherText.length));
 
@@ -62,24 +61,27 @@ export function decryptFise(
 	rules: FiseRules,
 	options: { timestampMinutes?: number } = {}
 ): string {
+	// Normalize rules to fill in optional methods with defaults
+	const fullRules = normalizeFiseRules(rules);
+
 	const ctx: FiseContext = { timestampMinutes: options.timestampMinutes };
 
-	const { saltLength, encodedLength, withoutLen } = rules.preExtractLength(
+	const { saltLength, encodedLength, withoutLen } = fullRules.preExtractLength(
 		envelope,
 		ctx
 	);
 
-	const salt = rules.extractSalt(envelope, saltLength, {
+	const salt = fullRules.extractSalt(envelope, saltLength, {
 		...ctx,
 		saltLength
 	});
 
 	// Optimize: Calculate offset directly (O(1)) instead of searching (O(n²))
 	// Note: For defaultRules, offset only depends on length, not content
-	const encodedSize = rules.encodedLengthSize;
+	const encodedSize = fullRules.encodedLengthSize;
 	const ctxWithSalt = { ...ctx, saltLength };
 	const cipherTextLen = withoutLen.length - encodedSize;
-	const expectedOffset = rules.offset(
+	const expectedOffset = fullRules.offset(
 		"x".repeat(Math.max(1, cipherTextLen)),
 		ctxWithSalt
 	);
