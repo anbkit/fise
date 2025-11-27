@@ -11,7 +11,9 @@
 
 Modern web apps must render meaningful JSON on the client. HTTPS protects transport, but **data meaning** remains exposed in the browser, making large-scale scraping and cloning cheap. Traditional client-side encryption requires keys in the frontend, which attackers can read; heavy crypto also adds latency.
 
-**FISE** proposes a **rule-based, keyless transformation pipeline** that “wraps” responses in a polymorphic **semantic envelope**. Each application (and optionally each session/request) uses a unique, rotating rule-set to assemble salt, offsets, and metadata into a structure with **no protocol-level universal decoder**—attackers must tailor a decoder per pipeline. FISE focuses on _raising attacker cost_ (not secrecy), with **microsecond-level** encode/decode on commodity devices.
+**Design principle:** Rather than distributing static client keys, FISE injects **shared, ephemeral rules** ("rules-as-code") that are bound to context and rotate quickly; any decoder inferred from one session does **not** generalize to others or future windows.
+
+**FISE** proposes a **rule-based, keyless transformation pipeline** that "wraps" responses in a polymorphic **semantic envelope**. Each application (and optionally each session/request) uses a unique, rotating rule-set to assemble salt, offsets, and metadata into a structure with **no protocol-level universal decoder**—attackers must tailor a decoder per pipeline. FISE focuses on _raising attacker cost_ (not secrecy), with **microsecond-level** encode/decode on commodity devices.
 
 FISE complements, not replaces: TLS, authentication/authorization, backend rate-limits, or cryptography for secrets. It is best suited where **data itself is the asset** (e.g., curated POI, pricing, recommendations, AI metadata).
 
@@ -55,6 +57,10 @@ A few fetch calls and pagination often suffice to replicate valuable datasets at
 ---
 
 ## 3. Design Philosophy
+
+**Core principle:** Rather than distributing static client keys, FISE injects **shared, ephemeral rules** ("rules-as-code") that are bound to context and rotate quickly. Any decoder inferred from one session does **not** generalize to others or future windows, creating economic impossibility for automated attacks at scale.
+
+This yields the following properties:
 
 1. **Keyless by design** — no static client key to steal.
 2. **Security through diversity** — each app/session/request may use a different rule-set.
