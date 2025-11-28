@@ -108,7 +108,7 @@ test("decryptFise - error: invalid envelope", () => {
             decryptFise("invalid", xorCipher, defaultRules);
         },
         {
-            message: "FISE: cannot infer salt length from envelope."
+            message: "FISE: cannot infer salt length from envelope. This may indicate a corrupted envelope or mismatched rules/timestamp."
         }
     );
 });

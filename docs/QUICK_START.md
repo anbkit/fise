@@ -37,7 +37,7 @@ export const myRules = {
   ...defaultRules,
   offset(c, ctx) {
     // Your unique offset - just change the multiplier/modulo!
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length * 13 + (t % 17)) % c.length; // Different primes!
   }
 };
@@ -130,7 +130,7 @@ import { FiseRules } from "fise";
 export const myRules: FiseRules = {
   // 1. Where to place metadata (varies per app - THIS IS THE KEY!)
   offset(cipherText, ctx) {
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (cipherText.length * 7 + (t % 11)) % cipherText.length;
   },
   
@@ -218,7 +218,7 @@ export const myRules = {
   ...defaultRules,
   offset(c, ctx) {
     // Just change the multiplier/modulo - you're done!
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length * 13 + (t % 17)) % c.length; // Different primes!
   }
 };
@@ -288,7 +288,7 @@ const decrypted = decryptFise(encrypted, xorCipher, defaultRules);
 const rules = {
   offset(c, ctx) {
     // Your unique offset calculation
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length * 13 + (t % 17)) % c.length;
   },
   encodeLength: (len) => len.toString(36).padStart(2, "0"),
@@ -301,7 +301,7 @@ const rules = {
 ```typescript
 const rules = {
   offset(c, ctx) {
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length * 7 + (t % 11)) % c.length;
   },
   // Base62 encoding instead of base36
@@ -331,7 +331,7 @@ const rules = {
 ```typescript
 const rules = {
   offset(c, ctx) {
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length * 7 + (t % 11)) % c.length;
   },
   encodeLength: (len) => len.toString(36).padStart(2, "0"),
@@ -345,7 +345,7 @@ const rules = {
 ```typescript
 const rules = {
   offset(c, ctx) {
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length * 7 + (t % 11)) % c.length;
   },
   encodeLength: (len) => len.toString(36).padStart(2, "0"),
@@ -371,7 +371,7 @@ import { defaultRules } from "fise";
 const rules = {
   ...defaultRules,
   offset(c, ctx) {
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length * 7 + (t % 11)) % c.length;
   }
 };
@@ -384,7 +384,7 @@ import { defaultRules } from "fise";
 const rules = {
   ...defaultRules,
   offset(c, ctx) {
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length * 13 + (t % 17)) % c.length; // Different primes!
   }
 };
@@ -416,7 +416,7 @@ const rules = {
 ```typescript
 const rules = {
   offset(c, ctx) {
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     const len = c.length || 1;
     const saltLen = ctx.saltLength ?? 10;
     return (len * 17 + (t % 23) + (saltLen * 3)) % len;
@@ -430,7 +430,7 @@ const rules = {
 ```typescript
 const rules = {
   offset(c, ctx) {
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length ^ t) % c.length;
   },
   encodeLength: len => len.toString(36).padStart(2, "0"),
@@ -442,7 +442,7 @@ const rules = {
 ```typescript
 const rules = {
   offset(c, ctx) {
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     // Using prime numbers for better distribution
     return (c.length * 3 + (t % 7)) % c.length;
   },
@@ -455,7 +455,7 @@ const rules = {
 ```typescript
 const rules = {
   offset(c, ctx) {
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length * 7 + (t % 11)) % c.length;
   },
   encodeLength(len) {
@@ -493,7 +493,7 @@ Each developer's unique approach creates:
 ```typescript
 // Everyone uses this
 const sameRules = {
-  offset: (c, ctx) => (c.length * 7 + (ctx.timestampMinutes % 11)) % c.length,
+  offset: (c, ctx) => (c.length * 7 + (ctx.timestamp % 11)) % c.length,
   encodeLength: len => len.toString(36).padStart(2, "0"),
   decodeLength: encoded => parseInt(encoded, 36)
 };
@@ -503,16 +503,16 @@ const sameRules = {
 **When Everyone Writes Their Own:**
 ```typescript
 // Developer A
-offset: (c, ctx) => (c.length * 7 + (ctx.timestampMinutes % 11)) % c.length
+offset: (c, ctx) => (c.length * 7 + (ctx.timestamp % 11)) % c.length
 
 // Developer B  
-offset: (c, ctx) => (c.length * 13 + (ctx.timestampMinutes % 17)) % c.length
+offset: (c, ctx) => (c.length * 13 + (ctx.timestamp % 17)) % c.length
 
 // Developer C
 offset: (c) => Math.floor(c.length / 2)
 
 // Developer D
-offset: (c, ctx) => (c.length ^ ctx.timestampMinutes) % c.length
+offset: (c, ctx) => (c.length ^ ctx.timestamp) % c.length
 ```
 **Result**: ✅ No universal decoder → strong security through diversity
 
@@ -523,11 +523,11 @@ offset: (c, ctx) => (c.length ^ ctx.timestampMinutes) % c.length
    - Consider using app-specific constants
    - **Just copy `defaultRules` and change the multiplier/modulo - that's it!**
 
-2. **Use timestamp for rotation** - Pass `timestampMinutes` in options (backend only):
+2. **Use timestamp for rotation** - Pass `timestamp` in options (backend only):
    ```typescript
    // backend.ts
    encryptFise(text, cipher, rules, { 
-     timestampMinutes: Math.floor(Date.now() / 60000) 
+     timestamp: Math.floor(Date.now() / 60000) 
    });
    ```
 

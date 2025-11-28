@@ -14,7 +14,7 @@ export class FiseBuilderInstance {
 
     /**
      * Set the offset function (REQUIRED - Security Point #1)
-     * @example .withOffset((c, ctx) => (c.length * 7 + (ctx.timestampMinutes % 11)) % c.length)
+     * @example .withOffset((c, ctx) => (c.length * 7 + (ctx.timestamp % 11)) % c.length)
      */
     withOffset(fn: (cipherText: string, ctx: FiseContext) => number): this {
         this.offsetFn = fn;

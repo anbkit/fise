@@ -1,4 +1,6 @@
 import { FiseContext, FiseRules } from "../types.js";
+import { extractEnvelopeLength, EnvelopeLengthInfo } from "./lengthExtractor.js";
+import { DEFAULT_SALT_RANGE } from "./constants.js";
 
 /**
  * Internal normalized rules with all fields required for encryption/decryption.
@@ -11,77 +13,69 @@ export interface NormalizedFiseRules {
     decodeLength(encoded: string, ctx: FiseContext): number;
     extractSalt(envelope: string, saltLen: number, ctx: FiseContext): string;
     stripSalt(envelope: string, saltLen: number, ctx: FiseContext): string;
-    preExtractLength(
-        envelope: string,
-        ctxBase: FiseContext
-    ): {
-        saltLength: number;
-        encodedLength: string;
-        withoutLen: string;
-    };
+    preExtractLength(envelope: string, ctxBase: FiseContext): EnvelopeLengthInfo;
 }
 
 /**
- * Normalizes FiseRules by filling in optional methods with secure defaults.
+ * Normalizes string-based FiseRules by filling in optional methods with secure defaults.
  * This allows users to only specify the 3 security points (offset, encodeLength, decodeLength)
  * and everything else is automated.
+ *
+ * @param rules - String-based rules to normalize
+ * @returns Normalized rules with all optional methods filled in
  */
-export function normalizeFiseRules(rules: FiseRules): NormalizedFiseRules {
-    const saltRange = rules.saltRange ?? { min: 10, max: 99 };
+export function normalizeFiseRules(rules: FiseRules<string>): NormalizedFiseRules {
+    const saltRange = rules.saltRange ?? DEFAULT_SALT_RANGE;
 
     // Infer encodedLengthSize from encodeLength output
+    // Type system guarantees encodeLength returns string for FiseRules<string>
     const testEncoded = rules.encodeLength(10, {});
     const encodedLengthSize = testEncoded.length;
 
     // Default salt extraction: tail (unless custom extractSalt/stripSalt provided)
-    // If user provides extractSalt/stripSalt, use them; otherwise default to tail
-    const extractSalt = rules.extractSalt ?? ((envelope: string, saltLen: number, _ctx: FiseContext) => {
-        return envelope.slice(-saltLen);
-    });
+    // Type system guarantees string inputs/outputs
+    const extractSalt = rules.extractSalt
+        ? ((envelope: string, saltLen: number, ctx: FiseContext) => {
+            return rules.extractSalt!(envelope, saltLen, ctx);
+        })
+        : ((envelope: string, saltLen: number, _ctx: FiseContext) => {
+            return envelope.slice(-saltLen);
+        });
 
-    const stripSalt = rules.stripSalt ?? ((envelope: string, saltLen: number, _ctx: FiseContext) => {
-        return envelope.slice(0, envelope.length - saltLen);
-    });
+    const stripSalt = rules.stripSalt
+        ? ((envelope: string, saltLen: number, ctx: FiseContext) => {
+            return rules.stripSalt!(envelope, saltLen, ctx);
+        })
+        : ((envelope: string, saltLen: number, _ctx: FiseContext) => {
+            return envelope.slice(0, envelope.length - saltLen);
+        });
 
-    // Always use automated pre-extraction: brute-force search
-    const preExtractLength = (envelope: string, ctxBase: FiseContext) => {
-        for (let len = saltRange.min; len <= saltRange.max; len++) {
-            const withoutSalt = stripSalt(envelope, len, ctxBase);
-            if (withoutSalt.length < encodedLengthSize) continue;
-
-            for (let i = 0; i <= withoutSalt.length - encodedLengthSize; i++) {
-                const encoded = withoutSalt.slice(i, i + encodedLengthSize);
-                const decodedLen = rules.decodeLength(encoded, ctxBase);
-                if (Number.isNaN(decodedLen) || decodedLen !== len) continue;
-
-                const candidate = withoutSalt.slice(0, i) + withoutSalt.slice(i + encodedLengthSize);
-
-                const expectedOffset = rules.offset(candidate, {
-                    ...ctxBase,
-                    saltLength: len
-                });
-
-                if (expectedOffset !== i) continue;
-
-                return {
-                    saltLength: len,
-                    encodedLength: encoded,
-                    withoutLen: withoutSalt
-                };
-            }
-        }
-
-        throw new Error("FISE: cannot infer salt length from envelope.");
-    };
+    // Use generic length extractor - eliminates code duplication!
+	const preExtractLength = (envelope: string, ctxBase: FiseContext) => {
+		return extractEnvelopeLength(
+			envelope,
+			saltRange,
+			encodedLengthSize,
+			stripSalt,
+			rules.decodeLength as any,
+			rules.offset as any,
+			ctxBase
+		);
+	};
 
     return {
         encodedLengthSize,
-        offset: rules.offset,
-        encodeLength: rules.encodeLength,
-        decodeLength: rules.decodeLength,
+        offset: (cipherText: string, ctx: FiseContext) => {
+            return rules.offset(cipherText, ctx);
+        },
+        encodeLength: (len: number, ctx: FiseContext) => {
+            return rules.encodeLength(len, ctx);
+        },
+        decodeLength: (encoded: string, ctx: FiseContext) => {
+            return rules.decodeLength(encoded, ctx);
+        },
         extractSalt,
         stripSalt,
         preExtractLength
     };
 }
-

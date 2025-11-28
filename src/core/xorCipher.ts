@@ -2,7 +2,7 @@ import { FiseCipher } from "../types";
 import { toBase64, fromBase64 } from "./utils.js";
 
 /**
- * XOR-based cipher implementation for FISE.
+ * XOR-based cipher implementation for FISE (string-based).
  * 
  * This cipher performs XOR operation between plaintext and salt characters,
  * then base64-encodes the result. It's designed for speed, not cryptographic security.

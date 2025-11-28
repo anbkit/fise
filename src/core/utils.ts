@@ -1,6 +1,11 @@
 const ALPHABET =
 	"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
+/**
+ * Generate random salt string of specified length
+ * @param len - Length of salt to generate
+ * @returns Random salt string using alphanumeric characters
+ */
 export function randomSalt(len: number): string {
 	let out = "";
 	const n = ALPHABET.length;
@@ -8,6 +13,16 @@ export function randomSalt(len: number): string {
 		out += ALPHABET[Math.floor(Math.random() * n)];
 	}
 	return out;
+}
+
+/**
+ * Generate random binary salt of specified length
+ * @param len - Length of salt to generate
+ * @returns Random salt as Uint8Array
+ */
+export function randomSaltBinary(len: number): Uint8Array {
+	const salt = randomSalt(len);
+	return new TextEncoder().encode(salt);
 }
 
 export function toBase64(str: string): string {

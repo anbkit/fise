@@ -32,8 +32,8 @@ session/window. Rules are **heterogeneous per chunk**, **bound to context**
 Optionally, the server applies a **server-only HMAC over bindings** to add integrity and
 non-transferability across routes/sessions.
 
-> **Tagline:** _Rules as Code, Not Keys._  
-> **Alt:** _Rotate Rules, Not Secrets._
+> **Rules as Code, Not Keys.**  
+> **Rotate Rules, Not Secrets.**
 
 ## ⚡ Performance
 
@@ -168,7 +168,7 @@ export const myRules = {
   ...defaultRules,
   offset(c, ctx) {
     // Your unique offset - just change the multiplier/modulo!
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length * 13 + (t % 17)) % c.length; // Different primes!
   }
 };
@@ -259,14 +259,14 @@ import { encryptFise, xorCipher, defaultRules } from "fise";
 
 app.get('/api/data', (req, res) => {
   const data = { hello: "world", timestamp: Date.now() };
-  const timestampMinutes = Math.floor(Date.now() / 60000);
+  const timestamp = Math.floor(Date.now() / 60000);
   
   const encrypted = encryptFise(
     JSON.stringify(data),
     xorCipher,
     defaultRules,
     {
-      timestampMinutes
+      timestamp
     }
   );
   // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
@@ -284,10 +284,10 @@ import { decryptFise, xorCipher, defaultRules } from "fise";
 
 const { data: encrypted } = await fetch('/api/data').then(r => r.json());
 // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
-const timestampMinutes = Math.floor(Date.now() / 60000);
+const timestamp = Math.floor(Date.now() / 60000);
 
 const decrypted = decryptFise(encrypted, xorCipher, defaultRules, {
-  timestampMinutes
+  timestamp
 });
 // decrypted: '{"hello":"world","timestamp":1234567890}' (decrypted JSON string)
 const data = JSON.parse(decrypted);

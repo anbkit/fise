@@ -21,7 +21,7 @@ export class FiseBuilder {
     static defaults(): FiseBuilderInstance {
         return new FiseBuilderInstance()
             .withOffset((cipherText, ctx) => {
-                const t = ctx.timestampMinutes ?? 0;
+                const t = ctx.timestamp ?? 0;
                 const len = cipherText.length || 1;
                 return (len * 7 + (t % 11)) % len;
             })
@@ -37,7 +37,7 @@ export class FiseBuilder {
     static simple(multiplier: number = 7, modulo: number = 11): FiseBuilderInstance {
         return new FiseBuilderInstance()
             .withOffset((cipherText, ctx) => {
-                const t = ctx.timestampMinutes ?? 0;
+                const t = ctx.timestamp ?? 0;
                 const len = cipherText.length || 1;
                 return (len * multiplier + (t % modulo)) % len;
             })
@@ -54,7 +54,7 @@ export class FiseBuilder {
     static timestamp(multiplier: number = 13, modulo: number = 17): FiseBuilderInstance {
         return new FiseBuilderInstance()
             .withOffset((cipherText, ctx) => {
-                const t = ctx.timestampMinutes ?? 0;
+                const t = ctx.timestamp ?? 0;
                 const len = cipherText.length || 1;
                 return (len * multiplier + (t % modulo)) % len;
             })
@@ -103,7 +103,7 @@ export class FiseBuilder {
     static prime(multiplier: number = 17, modulo: number = 23): FiseBuilderInstance {
         return new FiseBuilderInstance()
             .withOffset((cipherText, ctx) => {
-                const t = ctx.timestampMinutes ?? 0;
+                const t = ctx.timestamp ?? 0;
                 const len = cipherText.length || 1;
                 return (len * multiplier + (t % modulo)) % len;
             })
@@ -120,7 +120,7 @@ export class FiseBuilder {
     static multiFactor(): FiseBuilderInstance {
         return new FiseBuilderInstance()
             .withOffset((cipherText, ctx) => {
-                const t = ctx.timestampMinutes ?? 0;
+                const t = ctx.timestamp ?? 0;
                 const len = cipherText.length || 1;
                 const saltLen = ctx.saltLength ?? 10;
                 return (len * 7 + (t % 11) + (saltLen * 3)) % len;
@@ -138,7 +138,7 @@ export class FiseBuilder {
     static hex(): FiseBuilderInstance {
         return new FiseBuilderInstance()
             .withOffset((cipherText, ctx) => {
-                const t = ctx.timestampMinutes ?? 0;
+                const t = ctx.timestamp ?? 0;
                 const len = cipherText.length || 1;
                 return (len * 7 + (t % 11)) % len;
             })
@@ -156,7 +156,7 @@ export class FiseBuilder {
         const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
         return new FiseBuilderInstance()
             .withOffset((cipherText, ctx) => {
-                const t = ctx.timestampMinutes ?? 0;
+                const t = ctx.timestamp ?? 0;
                 const len = cipherText.length || 1;
                 return (len * 7 + (t % 11)) % len;
             })
@@ -189,7 +189,7 @@ export class FiseBuilder {
     static xor(): FiseBuilderInstance {
         return new FiseBuilderInstance()
             .withOffset((cipherText, ctx) => {
-                const t = ctx.timestampMinutes ?? 0;
+                const t = ctx.timestamp ?? 0;
                 const len = cipherText.length || 1;
                 return (len ^ t) % len;
             })
@@ -209,7 +209,7 @@ export class FiseBuilder {
 
         return new FiseBuilderInstance()
             .withOffset((cipherText, ctx) => {
-                const t = ctx.timestampMinutes ?? 0;
+                const t = ctx.timestamp ?? 0;
                 const len = cipherText.length || 1;
                 return (len * 7 + (t % 11)) % len;
             })
@@ -249,7 +249,7 @@ export class FiseBuilder {
 
         return new FiseBuilderInstance()
             .withOffset((cipherText, ctx) => {
-                const t = ctx.timestampMinutes ?? 0;
+                const t = ctx.timestamp ?? 0;
                 const len = cipherText.length || 1;
                 return (len * 7 + (t % 11)) % len;
             })

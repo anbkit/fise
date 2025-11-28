@@ -35,7 +35,7 @@ Context information passed to rule methods:
 
 ```typescript
 interface FiseContext {
-  timestampMinutes?: number;  // Timestamp in minutes (for rotation)
+  timestamp?: number;  // Timestamp in minutes (for rotation)
   saltLength?: number;        // Current salt length (during decryption)
   randomSeed?: number;        // Optional random seed
 }

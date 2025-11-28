@@ -1,6 +1,6 @@
 {
 	"name": "fise",
-	"version": "0.1.3",
+	"version": "0.1.4",
 	"description": "FISE - Fast Internet Secure Extensible: a keyless, rule-based envelope to protect API & frontend data.",
 	"type": "module",
 	"main": "dist/index.js",
@@ -18,7 +18,7 @@
 	"scripts": {
 		"build": "tsc -p tsconfig.json",
 		"test": "npm run build && node --test tests/**/*.mjs",
-		"benchmark": "npm run build && node dist/benchmark.js"
+		"benchmark": "tsx benchmarks/benchmark.ts"
 	},
 	"keywords": [
 		"security",

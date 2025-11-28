@@ -15,7 +15,7 @@ FISE rules define how data is transformed and protected. The beauty of FISE is i
 **Example:**
 ```typescript
 offset(cipherText: string, ctx: FiseContext): number {
-  const t = ctx.timestampMinutes ?? 0;
+  const t = ctx.timestamp ?? 0;
   const len = cipherText.length || 1;
   return (len * 7 + (t % 11)) % len;
 }
@@ -102,7 +102,7 @@ const myRules = {
   ...defaultRules,
   offset(c, ctx) {
     // Your unique offset - just change the multiplier/modulo!
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length * 13 + (t % 17)) % c.length;
   }
 };
@@ -130,7 +130,7 @@ import { FiseBuilder } from "fise";
 
 const rules = FiseBuilder.create()
   .withOffset((c, ctx) => {
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (c.length * 7 + (t % 11)) % c.length;
   })
   .withEncodeLength((len) => len.toString(36).padStart(2, "0"))
@@ -146,7 +146,7 @@ Define rules directly as an object:
 ```typescript
 const rules: FiseRules = {
   offset(cipherText, ctx) {
-    const t = ctx.timestampMinutes ?? 0;
+    const t = ctx.timestamp ?? 0;
     return (cipherText.length * 7 + (t % 11)) % cipherText.length;
   },
   encodeLength(len) {
@@ -164,11 +164,11 @@ const rules: FiseRules = {
    - Use different multipliers/modulos per app
    - Consider using app-specific constants
 
-2. **Use timestamp for rotation** - Pass `timestampMinutes` in options (backend only):
+2. **Use timestamp for rotation** - Pass `timestamp` in options (backend only):
    ```typescript
    // backend.ts
    encryptFise(text, cipher, rules, { 
-     timestampMinutes: Math.floor(Date.now() / 60000) 
+     timestamp: Math.floor(Date.now() / 60000) 
    });
    ```
 
@@ -187,7 +187,7 @@ const rules: FiseRules = {
 
 ```typescript
 offset(c, ctx) {
-  const t = ctx.timestampMinutes ?? 0;
+  const t = ctx.timestamp ?? 0;
   return (c.length * 7 + (t % 11)) % c.length;
 }
 ```
@@ -212,7 +212,7 @@ offset(c) {
 
 ```typescript
 offset(c, ctx) {
-  const t = ctx.timestampMinutes ?? 0;
+  const t = ctx.timestamp ?? 0;
   const saltLen = ctx.saltLength ?? 10;
   return (c.length * 7 + (t % 11) + (saltLen * 3)) % c.length;
 }
