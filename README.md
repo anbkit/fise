@@ -1,9 +1,8 @@
 # FISE — Fast Internet Secure Extensible
 
 [![npm version](https://img.shields.io/npm/v/fise.svg)](https://www.npmjs.com/package/fise)
-[![npm downloads](https://img.shields.io/npm/dm/fise.svg)](https://www.npmjs.com/package/fise)
 [![license](https://img.shields.io/github/license/anbkit/fise)](./LICENSE)
-[![TypeScript](https://img.shields.io/badge/TypeScript-ready-3178C6)](https://www.typescriptlang.org/)
+[![Tests](https://github.com/anbkit/fise/actions/workflows/test.yml/badge.svg)](https://github.com/anbkit/fise/actions/workflows/test.yml)
 
 ---
 
