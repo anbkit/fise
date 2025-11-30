@@ -21,6 +21,7 @@
 
 > **Calibrated claim:** there is **no protocol-level universal decoder** across FISE deployments. Attackers must tailor a decoder **per pipeline / session window**, and rotation increases their maintenance cost.
 
+
 ---
 
 ### 🧭 Design Principle — Shared Ephemeral Rule (Not a Client Key)
@@ -35,9 +36,9 @@ non-transferability across routes/sessions.
 > **Rules as Code, Not Keys.**  
 > **Rotate Rules, Not Secrets.**
 
-## ⚡ Performance
+### How FISES works
+![How FISE Works](./docs/how-fise-works.png)
 
-See detailed benchmarks and methodology in [`docs/PERFORMANCE.md`](./docs/PERFORMANCE.md).
 
 ---
 
@@ -134,6 +135,10 @@ Obfuscate **0.5–3%** bytes that are **structurally critical**, then restore cl
 -   Optional **watermark** per session
 
 **Effect**: legit clients play immediately; restreamers accumulate latency debt (find bootstrap → craft decoders → chase rotations).
+
+## ⚡ Performance
+
+See detailed benchmarks and methodology in [`docs/PERFORMANCE.md`](./docs/PERFORMANCE.md).
 
 ---
 
