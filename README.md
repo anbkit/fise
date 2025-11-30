@@ -9,7 +9,7 @@
 
 ## 🔥 What is FISE?
 
-**FISE is a keyless, rule-based, high-performance _semantic envelope_ for protecting the _meaning_ of API responses and frontend data.**
+**FISE is a keyless, rule-based, high-performance _semantic envelope_ for protecting the _meaning_ of Web/API & Media data.**
 
 -   **Not a replacement** for AES, TLS, or authentication/authorization.
 -   Built for **web response protection**, where traditional crypto is heavy _or_ requires exposing static keys in the frontend.
@@ -36,9 +36,14 @@ non-transferability across routes/sessions.
 > **Rules as Code, Not Keys.**  
 > **Rotate Rules, Not Secrets.**
 
-### How FISES works
-![How FISE Works](./docs/how-fise-works.png)
+### How FISE Works
 
+<div align="center">
+
+![How FISE Works](./docs/how-fise-works.png)
+*Protecting JSON API payloads with FISE*
+
+</div>
 
 ---
 

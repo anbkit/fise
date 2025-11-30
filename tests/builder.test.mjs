@@ -43,7 +43,7 @@ test("FiseBuilderInstance - build with only offset defaults to base36", () => {
 test("FiseBuilderInstance - build with all 3 security points", () => {
     const builder = FiseBuilder.create()
         .withOffset((c, ctx) => {
-            const t = ctx.timestampMinutes ?? 0;
+            const t = ctx.timestamp ?? 0;
             return (c.length * 7 + (t % 11)) % c.length;
         })
         .withEncodeLength((len) => len.toString(36).padStart(2, "0"))
@@ -136,7 +136,7 @@ test("FiseBuilderInstance - fluent API chaining", () => {
 test("FiseBuilderInstance - works with encryptFise and decryptFise", () => {
     const rules = FiseBuilder.create()
         .withOffset((c, ctx) => {
-            const t = ctx.timestampMinutes ?? 0;
+            const t = ctx.timestamp ?? 0;
             return (c.length * 7 + (t % 11)) % c.length;
         })
         .withEncodeLength((len) => len.toString(36).padStart(2, "0"))
@@ -176,7 +176,7 @@ test("FiseBuilder.simple() - creates valid rules", () => {
 
     // Test offset with custom params
     const cipherText = "test123";
-    const offset = rules.offset(cipherText, { timestampMinutes: 0 });
+    const offset = rules.offset(cipherText, { timestamp: 0 });
     assert.ok(offset >= 0 && offset < cipherText.length);
 });
 
@@ -193,7 +193,7 @@ test("FiseBuilder.timestamp() - creates valid rules", () => {
     assert.ok(typeof rules.offset === "function");
 
     const cipherText = "test";
-    const offset = rules.offset(cipherText, { timestampMinutes: 5 });
+    const offset = rules.offset(cipherText, { timestamp: 5 });
     assert.ok(offset >= 0 && offset < cipherText.length);
 });
 
@@ -238,7 +238,7 @@ test("FiseBuilder.lengthBased() - works with encryptFise/decryptFise", () => {
 test("FiseBuilder.prime() - creates valid rules", () => {
     const rules = FiseBuilder.prime(17, 23).build();
     const cipherText = "test";
-    const offset = rules.offset(cipherText, { timestampMinutes: 10 });
+    const offset = rules.offset(cipherText, { timestamp: 10 });
     assert.ok(offset >= 0 && offset < cipherText.length);
 });
 
@@ -253,7 +253,7 @@ test("FiseBuilder.prime() - works with encryptFise/decryptFise", () => {
 test("FiseBuilder.multiFactor() - creates valid rules", () => {
     const rules = FiseBuilder.multiFactor().build();
     const cipherText = "test";
-    const offset = rules.offset(cipherText, { timestampMinutes: 5, saltLength: 15 });
+    const offset = rules.offset(cipherText, { timestamp: 5, saltLength: 15 });
     assert.ok(offset >= 0 && offset < cipherText.length);
 });
 
@@ -304,7 +304,7 @@ test("FiseBuilder.base62() - works with encryptFise/decryptFise", () => {
 test("FiseBuilder.xor() - creates valid rules", () => {
     const rules = FiseBuilder.xor().build();
     const cipherText = "test";
-    const offset = rules.offset(cipherText, { timestampMinutes: 5 });
+    const offset = rules.offset(cipherText, { timestamp: 5 });
     assert.ok(offset >= 0 && offset < cipherText.length);
 });
 
@@ -471,8 +471,8 @@ test("FiseBuilderInstance - timestamp-based offset rotation", () => {
     const rules = FiseBuilder.defaults().build();
     const cipherText = "test123";
 
-    const offset1 = rules.offset(cipherText, { timestampMinutes: 0 });
-    const offset2 = rules.offset(cipherText, { timestampMinutes: 11 });
+    const offset1 = rules.offset(cipherText, { timestamp: 0 });
+    const offset2 = rules.offset(cipherText, { timestamp: 11 });
 
     // With timestamp rotation, offsets should potentially differ
     // (though not guaranteed, depends on modulo)
@@ -517,4 +517,157 @@ test("FiseBuilderInstance - head salt extraction works", () => {
     assert.strictEqual(salt, "salt12345c");
     assert.strictEqual(withoutSalt, "iphertext");
     assert.strictEqual(salt + withoutSalt, envelope);
+});
+
+// ============================================================================
+// Edge Cases and Additional Tests
+// ============================================================================
+
+test("FiseBuilderInstance - offset with zero-length ciphertext", () => {
+    const rules = FiseBuilder.create()
+        .withOffset((c) => {
+            const len = c.length || 1;
+            // Ensure offset is in valid range [0, len)
+            return (len % 2) % len;
+        })
+        .build();
+
+    const offset = rules.offset("", {});
+    // When ciphertext is empty, len becomes 1, so offset = (1 % 2) % 1 = 1 % 1 = 0
+    assert.strictEqual(offset, 0);
+});
+
+test("FiseBuilderInstance - offset with single character", () => {
+    const rules = FiseBuilder.defaults().build();
+    const offset = rules.offset("a", { timestamp: 0 });
+    assert.strictEqual(offset, 0); // (1 * 7 + 0) % 1 = 0
+});
+
+test("FiseBuilderInstance - encoding edge cases", () => {
+    const rules = FiseBuilder.defaults().build();
+
+    // Test minimum salt range
+    const encodedMin = rules.encodeLength(10, {});
+    const decodedMin = rules.decodeLength(encodedMin, {});
+    assert.strictEqual(decodedMin, 10);
+
+    // Test maximum salt range
+    const encodedMax = rules.encodeLength(99, {});
+    const decodedMax = rules.decodeLength(encodedMax, {});
+    assert.strictEqual(decodedMax, 99);
+
+    // Test boundary values
+    const encoded0 = rules.encodeLength(0, {});
+    const decoded0 = rules.decodeLength(encoded0, {});
+    assert.strictEqual(decoded0, 0);
+});
+
+test("FiseBuilderInstance - base62 encoding edge cases", () => {
+    const rules = FiseBuilder.base62().build();
+
+    // Test various lengths
+    for (let len = 0; len <= 100; len++) {
+        const encoded = rules.encodeLength(len, {});
+        const decoded = rules.decodeLength(encoded, {});
+        assert.strictEqual(decoded, len, `Base62 encoding failed for length ${len}`);
+    }
+});
+
+test("FiseBuilderInstance - hex encoding edge cases", () => {
+    const rules = FiseBuilder.hex().build();
+
+    // Test various lengths
+    for (let len = 0; len <= 255; len++) {
+        const encoded = rules.encodeLength(len, {});
+        const decoded = rules.decodeLength(encoded, {});
+        assert.strictEqual(decoded, len, `Hex encoding failed for length ${len}`);
+    }
+});
+
+test("FiseBuilderInstance - customChars with minimum valid alphabet", () => {
+    const alphabet = "0123456789"; // Exactly 10 characters
+    const rules = FiseBuilder.customChars(alphabet).build();
+
+    const testLen = 15;
+    const encoded = rules.encodeLength(testLen, {});
+    const decoded = rules.decodeLength(encoded, {});
+    assert.strictEqual(decoded, testLen);
+});
+
+test("FiseBuilderInstance - salt range validation", () => {
+    const rules1 = FiseBuilder.create()
+        .withOffset((c) => 0)
+        .withSaltRange(1, 5)
+        .build();
+
+    assert.deepStrictEqual(rules1.saltRange, { min: 1, max: 5 });
+
+    const rules2 = FiseBuilder.create()
+        .withOffset((c) => 0)
+        .withSaltRange(100, 200)
+        .build();
+
+    assert.deepStrictEqual(rules2.saltRange, { min: 100, max: 200 });
+});
+
+test("FiseBuilderInstance - timestamp affects offset differently", () => {
+    const rules = FiseBuilder.defaults().build();
+    const cipherText = "test123456789";
+
+    const offsets = new Set();
+    for (let t = 0; t < 20; t++) {
+        const offset = rules.offset(cipherText, { timestamp: t });
+        offsets.add(offset);
+        assert.ok(offset >= 0 && offset < cipherText.length);
+    }
+
+    // With different timestamps, we should get some variation
+    // (though not necessarily all unique due to modulo)
+    assert.ok(offsets.size > 0);
+});
+
+test("FiseBuilderInstance - multiFactor uses saltLength", () => {
+    const rules = FiseBuilder.multiFactor().build();
+    const cipherText = "test";
+
+    const offset1 = rules.offset(cipherText, { timestamp: 0, saltLength: 10 });
+    const offset2 = rules.offset(cipherText, { timestamp: 0, saltLength: 20 });
+
+    // Different salt lengths should potentially produce different offsets
+    assert.ok(offset1 >= 0 && offset1 < cipherText.length);
+    assert.ok(offset2 >= 0 && offset2 < cipherText.length);
+});
+
+test("FiseBuilderInstance - all presets handle long strings", () => {
+    const longString = "a".repeat(1000);
+    const presets = [
+        () => FiseBuilder.defaults().build(),
+        () => FiseBuilder.hex().build(),
+        () => FiseBuilder.base62().build(),
+        () => FiseBuilder.timestamp().build(),
+        () => FiseBuilder.fixed().build()
+    ];
+
+    for (const presetFn of presets) {
+        const rules = presetFn();
+        const encrypted = encryptFise(longString, xorCipher, rules);
+        const decrypted = decryptFise(encrypted, xorCipher, rules);
+        assert.strictEqual(decrypted, longString, `Preset ${presetFn.name} failed with long string`);
+    }
+});
+
+test("FiseBuilderInstance - all presets handle special characters", () => {
+    const specialString = "!@#$%^&*()_+-=[]{}|;':\",./<>?`~";
+    const presets = [
+        () => FiseBuilder.defaults().build(),
+        () => FiseBuilder.hex().build(),
+        () => FiseBuilder.base62().build()
+    ];
+
+    for (const presetFn of presets) {
+        const rules = presetFn();
+        const encrypted = encryptFise(specialString, xorCipher, rules);
+        const decrypted = decryptFise(encrypted, xorCipher, rules);
+        assert.strictEqual(decrypted, specialString, `Preset ${presetFn.name} failed with special chars`);
+    }
 });

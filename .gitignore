@@ -26,3 +26,6 @@ pnpm-debug.log*
 # Editor
 .vscode/
 .idea/
+
+benchmarks/*.d.ts
+benchmarks/*.js
