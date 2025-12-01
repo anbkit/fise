@@ -25,7 +25,7 @@ test("defaultRules - encodeLength produces base36 padded string", () => {
 
 test("defaultRules - offset calculation", () => {
 	const cipherText = "abcdefghijklmnopqrstuvwxyz";
-	const ctx = { timestampMinutes: 0 };
+	const ctx = { timestamp: 0 };
 
 	const offset = defaultRules.offset(cipherText, ctx);
 
@@ -36,8 +36,8 @@ test("defaultRules - offset calculation", () => {
 
 test("defaultRules - offset changes with timestamp", () => {
 	const cipherText = "abcdefghijklmnopqrstuvwxyz";
-	const offset1 = defaultRules.offset(cipherText, { timestampMinutes: 0 });
-	const offset2 = defaultRules.offset(cipherText, { timestampMinutes: 1 });
+	const offset1 = defaultRules.offset(cipherText, { timestamp: 0 });
+	const offset2 = defaultRules.offset(cipherText, { timestamp: 1 });
 
 	// Offset may or may not change, but should be valid
 	assert.ok(offset1 >= 0 && offset1 < cipherText.length);
@@ -46,7 +46,7 @@ test("defaultRules - offset changes with timestamp", () => {
 
 test("defaultRules - offset with empty string", () => {
 	const cipherText = "";
-	const ctx = { timestampMinutes: 0 };
+	const ctx = { timestamp: 0 };
 
 	const offset = defaultRules.offset(cipherText, ctx);
 
@@ -67,11 +67,10 @@ test("defaultRules - decodeLength handles edge cases", () => {
 
 test("defaultRules - offset is deterministic for same input", () => {
 	const cipherText = "testciphertext123";
-	const ctx = { timestampMinutes: 42 };
+	const ctx = { timestamp: 42 };
 
 	const offset1 = defaultRules.offset(cipherText, ctx);
 	const offset2 = defaultRules.offset(cipherText, ctx);
 
 	assert.strictEqual(offset1, offset2);
 });
-

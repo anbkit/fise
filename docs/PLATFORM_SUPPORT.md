@@ -27,34 +27,34 @@ FISE works seamlessly with any Node.js framework:
 
 **Example (Express):**
 ```typescript
-import { encryptFise, xorCipher, defaultRules } from 'fise';
+import { fiseEncrypt, defaultRules } from 'fise';
 
 app.get('/api/users', (req, res) => {
   const users = getUsersFromDatabase();
-  const encrypted = encryptFise(JSON.stringify(users), xorCipher, defaultRules);
+  const encrypted = fiseEncrypt(JSON.stringify(users), defaultRules);
   res.json({ data: encrypted });
 });
 ```
 
 **Example (Fastify):**
 ```typescript
-import { encryptFise, xorCipher, defaultRules } from 'fise';
+import { fiseEncrypt, defaultRules } from 'fise';
 
 fastify.get('/api/users', async (request, reply) => {
   const users = await getUsersFromDatabase();
-  const encrypted = encryptFise(JSON.stringify(users), xorCipher, defaultRules);
+  const encrypted = fiseEncrypt(JSON.stringify(users), defaultRules);
   return { data: encrypted };
 });
 ```
 
 **Example (NestJS):**
 ```typescript
-import { encryptFise, xorCipher, defaultRules } from 'fise';
+import { fiseEncrypt, defaultRules } from 'fise';
 
 @Get('users')
 getUsers() {
   const users = this.usersService.findAll();
-  return encryptFise(JSON.stringify(users), xorCipher, defaultRules);
+  return fiseEncrypt(JSON.stringify(users), defaultRules);
 }
 ```
 
@@ -78,7 +78,7 @@ FISE works seamlessly with any frontend framework:
 
 **Example (React):**
 ```typescript
-import { decryptFise, xorCipher, defaultRules } from 'fise';
+import { fiseDecrypt, defaultRules } from 'fise';
 
 function UserList() {
   const [users, setUsers] = useState([]);
@@ -87,7 +87,7 @@ function UserList() {
     fetch('/api/users')
       .then(r => r.json())
       .then(({ data }) => {
-        const decrypted = decryptFise(data, xorCipher, defaultRules);
+        const decrypted = fiseDecrypt(data, defaultRules);
         setUsers(JSON.parse(decrypted));
       });
   }, []);
@@ -99,13 +99,13 @@ function UserList() {
 **Example (Vue 3):**
 ```typescript
 import { ref, onMounted } from 'vue';
-import { decryptFise, xorCipher, defaultRules } from 'fise';
+import { fiseDecrypt, defaultRules } from 'fise';
 
 const users = ref([]);
 
 onMounted(async () => {
   const { data } = await fetch('/api/users').then(r => r.json());
-  const decrypted = decryptFise(data, xorCipher, defaultRules);
+  const decrypted = fiseDecrypt(data, defaultRules);
   users.value = JSON.parse(decrypted);
 });
 ```
@@ -115,7 +115,7 @@ onMounted(async () => {
 import { Component } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { map } from 'rxjs/operators';
-import { decryptFise, xorCipher, defaultRules } from 'fise';
+import { fiseDecrypt, defaultRules } from 'fise';
 
 @Component({
   selector: 'app-users',
@@ -124,7 +124,7 @@ import { decryptFise, xorCipher, defaultRules } from 'fise';
 export class UsersComponent {
   users$ = this.http.get<{ data: string }>('/api/users').pipe(
     map(({ data }) => {
-      const decrypted = decryptFise(data, xorCipher, defaultRules);
+      const decrypted = fiseDecrypt(data, defaultRules);
       return JSON.parse(decrypted);
     })
   );
@@ -137,13 +137,13 @@ export class UsersComponent {
 ```svelte
 <script>
 import { onMount } from 'svelte';
-import { decryptFise, xorCipher, defaultRules } from 'fise';
+import { fiseDecrypt, defaultRules } from 'fise';
 
 let users = [];
 
 onMount(async () => {
   const { data } = await fetch('/api/users').then(r => r.json());
-  users = JSON.parse(decryptFise(data, xorCipher, defaultRules));
+  users = JSON.parse(fiseDecrypt(data, defaultRules));
 });
 </script>
 
@@ -247,7 +247,7 @@ interface FiseRules {
 ```
 
 Plus:
-- `encryptFise()` / `decryptFise()` functions
+- `fiseEncrypt()` / `fiseDecrypt()` functions
 - XOR cipher (or custom cipher)
 - Base64 encode/decode helpers
 - Random salt generator
@@ -336,7 +336,7 @@ const salt = "abc123XYZ";
 const timestamp = 1234567890;
 
 // All implementations must produce identical output
-const encrypted = encryptFise(plaintext, xorCipher, defaultRules, { timestamp });
+const encrypted = fiseEncrypt(plaintext, defaultRules, { timestamp });
 // Expected: "GvQhPw2xHjI8NQo=abc123XYZ12" (example)
 ```
 
@@ -354,10 +354,10 @@ This ensures:
 ✅ **Supported via JavaScript bridge**
 
 ```typescript
-import { decryptFise, xorCipher, defaultRules } from 'fise';
+import { fiseDecrypt, defaultRules } from 'fise';
 
 // Works identically to web
-const decrypted = decryptFise(encryptedData, xorCipher, defaultRules);
+const decrypted = fiseDecrypt(encryptedData, defaultRules);
 ```
 
 ### iOS (Swift) - Planned
@@ -391,7 +391,7 @@ Can be compiled from Rust/C++ for high-performance scenarios:
 We welcome implementations for new languages and platforms! See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
 
 **Requirements:**
-1. Implement core API (`encryptFise`, `decryptFise`, `xorCipher`, `defaultRules`)
+1. Implement core API (`fiseEncrypt`, `fiseDecrypt`, `defaultRules`)
 2. Pass golden test suite (byte-for-byte compatibility)
 3. Use only standard library (no external dependencies)
 4. Provide examples for popular frameworks

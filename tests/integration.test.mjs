@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { encryptFise, decryptFise } from "../dist/encryptFise.js";
+import { fiseEncrypt, fiseDecrypt } from "../dist/index.js";
 import { xorCipher } from "../dist/core/xorCipher.js";
 import { defaultRules } from "../dist/rules/defaultRules.js";
 
@@ -18,8 +18,8 @@ test("integration - full pipeline with various data types", () => {
 	];
 
 	for (const plaintext of testCases) {
-		const encrypted = encryptFise(plaintext, xorCipher, defaultRules);
-		const decrypted = decryptFise(encrypted, xorCipher, defaultRules);
+		const encrypted = fiseEncrypt(plaintext, defaultRules);
+		const decrypted = fiseDecrypt(encrypted, defaultRules);
 
 		assert.strictEqual(decrypted, plaintext, `Failed for: ${plaintext.substring(0, 50)}`);
 	}
@@ -30,8 +30,8 @@ test("integration - multiple encryptions of same data", () => {
 	const results = [];
 
 	for (let i = 0; i < 5; i++) {
-		const encrypted = encryptFise(plaintext, xorCipher, defaultRules);
-		const decrypted = decryptFise(encrypted, xorCipher, defaultRules);
+		const encrypted = fiseEncrypt(plaintext, defaultRules);
+		const decrypted = fiseDecrypt(encrypted, defaultRules);
 		assert.strictEqual(decrypted, plaintext);
 		results.push(encrypted);
 	}
@@ -43,13 +43,13 @@ test("integration - multiple encryptions of same data", () => {
 
 test("integration - with timestamp context", () => {
 	const plaintext = "Timestamped message";
-	const timestampMinutes = 12345;
+	const timestamp = 12345;
 
-	const encrypted = encryptFise(plaintext, xorCipher, defaultRules, {
-		timestampMinutes
+	const encrypted = fiseEncrypt(plaintext, defaultRules, {
+		timestamp
 	});
-	const decrypted = decryptFise(encrypted, xorCipher, defaultRules, {
-		timestampMinutes
+	const decrypted = fiseDecrypt(encrypted, defaultRules, {
+		timestamp
 	});
 
 	assert.strictEqual(decrypted, plaintext);
@@ -68,8 +68,8 @@ test("integration - different salt length ranges", () => {
 			...defaultRules,
 			saltRange: range
 		};
-		const encrypted = encryptFise(plaintext, xorCipher, customRules);
-		const decrypted = decryptFise(encrypted, xorCipher, customRules);
+		const encrypted = fiseEncrypt(plaintext, customRules);
+		const decrypted = fiseDecrypt(encrypted, customRules);
 
 		assert.strictEqual(decrypted, plaintext);
 	}
@@ -88,8 +88,8 @@ test("integration - API response simulation", () => {
 	};
 
 	const plaintext = JSON.stringify(apiResponse);
-	const encrypted = encryptFise(plaintext, xorCipher, defaultRules);
-	const decrypted = decryptFise(encrypted, xorCipher, defaultRules);
+	const encrypted = fiseEncrypt(plaintext, defaultRules);
+	const decrypted = fiseDecrypt(encrypted, defaultRules);
 
 	assert.strictEqual(decrypted, plaintext);
 
@@ -108,8 +108,8 @@ test("integration - large payload", () => {
 	};
 
 	const plaintext = JSON.stringify(largeData);
-	const encrypted = encryptFise(plaintext, xorCipher, defaultRules);
-	const decrypted = decryptFise(encrypted, xorCipher, defaultRules);
+	const encrypted = fiseEncrypt(plaintext, defaultRules);
+	const decrypted = fiseDecrypt(encrypted, defaultRules);
 
 	assert.strictEqual(decrypted, plaintext);
 
@@ -123,8 +123,8 @@ test("integration - performance: multiple operations", () => {
 
 	const start = Date.now();
 	for (let i = 0; i < iterations; i++) {
-		const encrypted = encryptFise(plaintext, xorCipher, defaultRules);
-		const decrypted = decryptFise(encrypted, xorCipher, defaultRules);
+		const encrypted = fiseEncrypt(plaintext, defaultRules);
+		const decrypted = fiseDecrypt(encrypted, defaultRules);
 		assert.strictEqual(decrypted, plaintext);
 	}
 	const end = Date.now();
@@ -141,33 +141,28 @@ test("integration - error handling: wrong timestamp", () => {
 	const timestamp1 = 100;
 	const timestamp2 = 200;
 
-	const encrypted = encryptFise(plaintext, xorCipher, defaultRules, {
-		timestampMinutes: timestamp1
+	const encrypted = fiseEncrypt(plaintext, defaultRules, {
+		timestamp: timestamp1
 	});
 
-	// Decrypting with wrong timestamp might fail or succeed depending on implementation
-	// This test verifies behavior
-	try {
-		const decrypted = decryptFise(encrypted, xorCipher, defaultRules, {
-			timestampMinutes: timestamp2
-		});
-		// If it succeeds, that's also valid (timestamp might not be strictly enforced)
-		assert.ok(typeof decrypted === "string");
-	} catch (error) {
-		// If it fails, that's expected
-		assert.ok(error instanceof Error);
-	}
+	assert.throws(
+		() => {
+			fiseDecrypt(encrypted, defaultRules, {
+				timestamp: timestamp2
+			});
+		},
+		{ message: /FISE: cannot/ }
+	);
 });
 
 test("integration - envelope structure validation", () => {
 	const plaintext = "Structure test";
-	const encrypted = encryptFise(plaintext, xorCipher, defaultRules);
+	const encrypted = fiseEncrypt(plaintext, defaultRules);
 
 	// Envelope should be longer than plaintext (contains salt + metadata)
 	assert.ok(encrypted.length > plaintext.length);
 
 	// Should be able to decrypt
-	const decrypted = decryptFise(encrypted, xorCipher, defaultRules);
+	const decrypted = fiseDecrypt(encrypted, defaultRules);
 	assert.strictEqual(decrypted, plaintext);
 });
-

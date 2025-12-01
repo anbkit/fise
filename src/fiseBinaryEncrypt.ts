@@ -2,6 +2,7 @@ import { randomSaltBinary } from "./core/utils.js";
 import { normalizeFiseRulesBinary } from "./core/normalizeBinaryFiseRules.js";
 import { DEFAULT_SALT_RANGE } from "./core/constants.js";
 import { EncryptOptions, DecryptOptions, FiseBinaryCipher, FiseContext, FiseRules } from "./types.js";
+import { xorBinaryCipher } from "./core/xorBinaryCipher.js";
 
 /**
  * Encrypts binary data using FISE transformation with binary envelope.
@@ -9,19 +10,19 @@ import { EncryptOptions, DecryptOptions, FiseBinaryCipher, FiseContext, FiseRule
  * **Rules Sharing**: You can use the same rules for both string and binary encryption.
  * 
  * @param binaryData - The binary data to encrypt (Uint8Array)
- * @param cipher - The binary cipher implementation (e.g., xorBinaryCipher)
  * @param rules - The rules implementation (can be shared with string encryption).
  *                If rules use text-based encodeLength, they will be automatically converted to binary.
  *                For best performance, use binary-native rules (e.g., defaultBinaryRules).
- * @param options - Optional encryption options (timestamp, metadata)
+ * @param options - Optional encryption options (timestamp, metadata, binaryCipher).
+ *                  Defaults to xorBinaryCipher if binaryCipher is not specified.
  * @returns The encrypted envelope as Uint8Array (pure binary, no base64)
  */
-export function encryptBinaryFise(
+export function fiseBinaryEncrypt(
     binaryData: Uint8Array,
-    cipher: FiseBinaryCipher,
     rules: FiseRules<string | Uint8Array>,
     options: EncryptOptions = {}
 ): Uint8Array {
+    const cipher = options.binaryCipher ?? xorBinaryCipher;
     // Normalize rules
     const fullRules = normalizeFiseRulesBinary(rules);
 
@@ -84,19 +85,20 @@ export function encryptBinaryFise(
  * **Rules Sharing**: You can use the same rules for both string and binary decryption.
  * 
  * @param envelope - The encrypted envelope as Uint8Array (pure binary)
- * @param cipher - The binary cipher implementation (must match encryption)
  * @param rules - The rules implementation that matches the one used for encryption.
  *                Can be shared with string decryption - normalization handles adaptation.
- * @param options - Optional decryption options (timestamp and metadata must match encryption)
+ * @param options - Optional decryption options (timestamp, metadata, binaryCipher).
+ *                  Defaults to xorBinaryCipher if binaryCipher is not specified.
+ *                  Timestamp and metadata must match encryption.
  * @returns The decrypted binary data (Uint8Array)
  * 
  */
-export function decryptBinaryFise(
+export function fiseBinaryDecrypt(
     envelope: Uint8Array,
-    cipher: FiseBinaryCipher,
     rules: FiseRules<string | Uint8Array>,
     options: DecryptOptions = {}
 ): Uint8Array {
+    const cipher = options.binaryCipher ?? xorBinaryCipher;
     // Normalize rules
     const fullRules = normalizeFiseRulesBinary(rules);
 

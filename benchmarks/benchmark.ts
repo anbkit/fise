@@ -7,7 +7,7 @@
  * and provides detailed statistics.
  */
 
-import { encryptFise, decryptFise } from "../src/encryptFise.js";
+import { fiseEncrypt, fiseDecrypt } from "../src/fiseEncrypt.js";
 import { xorCipher } from "../src/core/xorCipher.js";
 import { defaultRules } from "../src/rules/defaultRules.js";
 import { writeFileSync, readFileSync } from "fs";
@@ -67,31 +67,31 @@ function benchmark(
 
 	// Warm up
 	for (let i = 0; i < warmup; i++) {
-		encryptFise(plaintext, xorCipher, defaultRules);
+		fiseEncrypt(plaintext, xorCipher, defaultRules);
 	}
 
 	// Benchmark encrypt
 	const encryptTimes: number[] = [];
 	for (let i = 0; i < iterations; i++) {
 		const start = process.hrtime.bigint();
-		encryptFise(plaintext, xorCipher, defaultRules);
+		fiseEncrypt(plaintext, xorCipher, defaultRules);
 		const end = process.hrtime.bigint();
 		encryptTimes.push(Number(end - start) / 1_000_000); // Convert to ms
 	}
 
 	// Get encrypted data for decrypt benchmark
-	const encrypted = encryptFise(plaintext, xorCipher, defaultRules);
+	const encrypted = fiseEncrypt(plaintext, xorCipher, defaultRules);
 
 	// Warm up decrypt
 	for (let i = 0; i < warmup; i++) {
-		decryptFise(encrypted, xorCipher, defaultRules);
+		fiseDecrypt(encrypted, xorCipher, defaultRules);
 	}
 
 	// Benchmark decrypt
 	const decryptTimes: number[] = [];
 	for (let i = 0; i < iterations; i++) {
 		const start = process.hrtime.bigint();
-		decryptFise(encrypted, xorCipher, defaultRules);
+		fiseDecrypt(encrypted, xorCipher, defaultRules);
 		const end = process.hrtime.bigint();
 		decryptTimes.push(Number(end - start) / 1_000_000); // Convert to ms
 	}

@@ -47,11 +47,11 @@ export const myRules = {
 
 ```typescript
 // backend.ts
-import { encryptFise, xorCipher } from "fise";
+import { fiseEncrypt } from "fise";
 import { myRules } from "./rules.js";
 
 // Encrypt on backend before sending to frontend
-const encrypted = encryptFise("Hello, World!", xorCipher, myRules);
+const encrypted = fiseEncrypt("Hello, World!", myRules);
 // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
 // (sample base64-encoded output - actual encrypted text will vary due to random salt)
 
@@ -63,7 +63,7 @@ res.json({ data: encrypted });
 
 ```typescript
 // frontend.ts
-import { decryptFise, xorCipher } from "fise";
+import { fiseDecrypt } from "fise";
 import { myRules } from "./rules.js";
 
 // Receive encrypted from API
@@ -71,7 +71,7 @@ const { data: encrypted } = await fetch('/api/data').then(r => r.json());
 
 // Decrypt on frontend
 // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
-const decrypted = decryptFise(encrypted, xorCipher, myRules);
+const decrypted = fiseDecrypt(encrypted, myRules);
 // decrypted: "Hello, World!" (decrypted plaintext)
 console.log(decrypted); // "Hello, World!"
 ```
@@ -96,10 +96,10 @@ export const rules = FiseBuilder.defaults().build();
 
 ```typescript
 // backend.ts
-import { encryptFise, xorCipher } from "fise";
+import { fiseEncrypt } from "fise";
 import { rules } from "./rules.js";
 
-const encrypted = encryptFise("Hello, World!", xorCipher, rules);
+const encrypted = fiseEncrypt("Hello, World!", rules);
 // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
 // (sample base64-encoded output - actual encrypted text will vary due to random salt)
 res.json({ data: encrypted });
@@ -109,12 +109,12 @@ res.json({ data: encrypted });
 
 ```typescript
 // frontend.ts
-import { decryptFise, xorCipher } from "fise";
+import { fiseDecrypt } from "fise";
 import { rules } from "./rules.js";
 
 const { data: encrypted } = await fetch('/api/data').then(r => r.json());
 // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
-const decrypted = decryptFise(encrypted, xorCipher, rules);
+const decrypted = fiseDecrypt(encrypted, rules);
 // decrypted: "Hello, World!" (decrypted plaintext)
 ```
 
@@ -150,11 +150,11 @@ export const myRules: FiseRules = {
 
 ```typescript
 // backend.ts
-import { encryptFise, xorCipher } from "fise";
+import { fiseEncrypt } from "fise";
 import { myRules } from "./rules.js";
 
 // Encrypt on backend
-const encrypted = encryptFise("Hello, World!", xorCipher, myRules);
+const encrypted = fiseEncrypt("Hello, World!", myRules);
 // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
 // (sample base64-encoded output - actual encrypted text will vary due to random salt)
 res.json({ data: encrypted });
@@ -164,13 +164,13 @@ res.json({ data: encrypted });
 
 ```typescript
 // frontend.ts
-import { decryptFise, xorCipher } from "fise";
+import { fiseDecrypt } from "fise";
 import { myRules } from "./rules.js";
 
 // Decrypt on frontend
 const { data: encrypted } = await fetch('/api/data').then(r => r.json());
 // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
-const decrypted = decryptFise(encrypted, xorCipher, myRules);
+const decrypted = fiseDecrypt(encrypted, myRules);
 // decrypted: "Hello, World!" (decrypted plaintext)
 console.log(decrypted); // "Hello, World!"
 ```
@@ -228,11 +228,11 @@ export const myRules = {
 
 ```typescript
 // backend.ts
-import { encryptFise, xorCipher } from "fise";
+import { fiseEncrypt } from "fise";
 import { myRules } from "./rules.js";
 
 const plaintext = "Hello";
-const encrypted = encryptFise(plaintext, xorCipher, myRules);
+const encrypted = fiseEncrypt(plaintext, myRules);
 // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
 // (sample base64-encoded output - actual encrypted text will vary due to random salt)
 
@@ -243,12 +243,12 @@ res.json({ data: encrypted });
 
 ```typescript
 // frontend.ts
-import { decryptFise, xorCipher } from "fise";
+import { fiseDecrypt } from "fise";
 import { myRules } from "./rules.js";
 
 const { data: encrypted } = await fetch('/api/data').then(r => r.json());
 // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
-const decrypted = decryptFise(encrypted, xorCipher, myRules);
+const decrypted = fiseDecrypt(encrypted, myRules);
 // decrypted: "Hello" (decrypted plaintext)
 ```
 
@@ -260,10 +260,10 @@ const decrypted = decryptFise(encrypted, xorCipher, myRules);
 
 ```typescript
 // backend.ts
-import { encryptFise, xorCipher, defaultRules } from "fise";
+import { fiseEncrypt, defaultRules } from "fise";
 
 const plaintext = "Hello";
-const encrypted = encryptFise(plaintext, xorCipher, defaultRules);
+const encrypted = fiseEncrypt(plaintext, defaultRules);
 // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
 // (sample base64-encoded output - actual encrypted text will vary due to random salt)
 
@@ -274,11 +274,11 @@ res.json({ data: encrypted });
 
 ```typescript
 // frontend.ts
-import { decryptFise, xorCipher, defaultRules } from "fise";
+import { fiseDecrypt, defaultRules } from "fise";
 
 const { data: encrypted } = await fetch('/api/data').then(r => r.json());
 // encrypted: "22DD0WVDdpEiYqGgUWEg==DXz8XE2qEhir3KwoowSUnUA40rVIQbVT3FzgoZRBWExbu5D5Eg1dcTg2GkqvBnf6X3AZZKNoMy"
-const decrypted = decryptFise(encrypted, xorCipher, defaultRules);
+const decrypted = fiseDecrypt(encrypted, defaultRules);
 // decrypted: "Hello" (decrypted plaintext)
 ```
 
@@ -526,7 +526,7 @@ offset: (c, ctx) => (c.length ^ ctx.timestamp) % c.length
 2. **Use timestamp for rotation** - Pass `timestamp` in options (backend only):
    ```typescript
    // backend.ts
-   encryptFise(text, cipher, rules, { 
+   fiseEncrypt(text, rules, { 
      timestamp: Math.floor(Date.now() / 60000) 
    });
    ```
@@ -543,8 +543,8 @@ offset: (c, ctx) => (c.length ^ ctx.timestamp) % c.length
 5. **Test your rules** - Ensure they work correctly:
    ```typescript
    // Test your rules
-   const encrypted = encryptFise("test", xorCipher, myRules);
-   const decrypted = decryptFise(encrypted, xorCipher, myRules);
+   const encrypted = fiseEncrypt("test", myRules);
+   const decrypted = fiseDecrypt(encrypted, myRules);
    console.assert(decrypted === "test", "Rules work!");
    ```
 

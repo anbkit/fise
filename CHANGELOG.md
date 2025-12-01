@@ -5,7 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.4] - Latest
+## [0.1.5] - Latest
+
+### Breaking Changes
+- **Function Naming Convention**: Standardized all function names with `fise` prefix for better discoverability
+  - `encryptFise()` → `fiseEncrypt()`
+  - `decryptFise()` → `fiseDecrypt()`
+  - `encryptBinaryFise()` → `fiseBinaryEncrypt()`
+  - `decryptBinaryFise()` → `fiseBinaryDecrypt()`
+  - **Migration**: Update all function calls in your code:
+    ```ts
+    // Before
+    import { encryptFise, decryptFise, encryptBinaryFise, decryptBinaryFise } from 'fise';
+    const encrypted = encryptFise(text, xorCipher, rules);
+    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    
+    // After
+    import { fiseEncrypt, fiseDecrypt, fiseBinaryEncrypt, fiseBinaryDecrypt } from 'fise';
+    const encrypted = fiseEncrypt(text, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
+    ```
+- **Cipher Parameter Moved to Options**: Cipher is now optional and defaults to `xorCipher`/`xorBinaryCipher`
+  - More ergonomic API - most users don't need to specify cipher
+  - Cipher can still be customized via `options.cipher` or `options.binaryCipher`
+  - **Migration**: Remove `cipher` parameter from function calls:
+    ```ts
+    // Before
+    fiseEncrypt(text, xorCipher, rules);
+    fiseDecrypt(envelope, xorCipher, rules);
+    fiseBinaryEncrypt(data, xorBinaryCipher, rules);
+    
+    // After (default cipher)
+    fiseEncrypt(text, rules);
+    fiseDecrypt(envelope, rules);
+    fiseBinaryEncrypt(data, rules);
+    
+    // Or with custom cipher
+    fiseEncrypt(text, rules, { cipher: myCustomCipher });
+    fiseBinaryEncrypt(data, rules, { binaryCipher: myCustomBinaryCipher });
+    ```
+- **File Naming**: Source files renamed to match function names
+  - `src/encryptFise.ts` → `src/fiseEncrypt.ts`
+  - `src/encryptBinaryFise.ts` → `src/fiseBinaryEncrypt.ts`
+  - Test files also renamed: `encryptFise.test.mjs` → `fiseEncrypt.test.mjs`, etc.
+
+### Changed
+- **API Simplification**: Default cipher (`xorCipher`/`xorBinaryCipher`) is now used automatically
+  - Reduces boilerplate for common use cases
+  - Still allows custom ciphers when needed via options
+- **Documentation**: Updated all documentation files to reflect new API:
+  - All code examples updated to use new function names
+  - All examples updated to use simplified API (cipher in options)
+  - Updated `QUICK_START.md`, `PLATFORM_SUPPORT.md`, `BUILDER.md`, `BINARY_ENVELOPE.md`
+  - Updated README.md and all other documentation files
+
+### Fixed
+- All 188 tests passing with new API
+- Comprehensive test coverage for all presets and edge cases
+
+## [0.1.4]
 
 ### Breaking Changes
 - **Timestamp API**: Changed from `timestampMinutes` to `timestamp` in `EncryptOptions` and `DecryptOptions`
@@ -14,18 +72,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Migration**: Replace `timestampMinutes` with `timestamp` in your code:
     ```ts
     // Before
-    encryptFise(data, cipher, rules, { timestampMinutes: 12345 });
-    decryptFise(envelope, cipher, rules, { timestampMinutes: 12345 });
+    fiseEncrypt(data, cipher, rules, { timestampMinutes: 12345 });
+    fiseDecrypt(envelope, cipher, rules, { timestampMinutes: 12345 });
     
     // After
-    encryptFise(data, cipher, rules, { timestamp: 12345 });
-    decryptFise(envelope, cipher, rules, { timestamp: 12345 });
+    fiseEncrypt(data, cipher, rules, { timestamp: 12345 });
+    fiseDecrypt(envelope, cipher, rules, { timestamp: 12345 });
     ```
 
 ### Added
 - **Binary Encryption Support**: Pure binary encryption/decryption for video, images, and other binary data
-  - `encryptBinaryFise()` - Encrypts binary data (Uint8Array) with pure binary envelopes (no base64 conversion)
-  - `decryptBinaryFise()` - Decrypts binary envelopes back to original binary data
+  - `fiseBinaryEncrypt()` - Encrypts binary data (Uint8Array) with pure binary envelopes (no base64 conversion)
+  - `fiseBinaryDecrypt()` - Decrypts binary envelopes back to original binary data
   - `xorBinaryCipher` - Binary-optimized XOR cipher that operates directly on Uint8Array (no string conversion)
   - `defaultBinaryRules` - Binary-native rules optimized for Uint8Array operations
   - `randomSaltBinary()` - Generates random binary salt as Uint8Array
@@ -38,7 +96,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Rules can access metadata via `ctx.metadata?.productId`
   - Enables per-item encryption patterns (e.g., different encryption per product ID)
   - Metadata must match between encryption and decryption
-- **Comprehensive Binary Test Suite**: Added `encryptFiseBinary.test.mjs` with 28 tests covering:
+- **Comprehensive Binary Test Suite**: Added `fiseEncryptBinary.test.mjs` with 28 tests covering:
   - Basic binary encryption/decryption roundtrips
   - Large binary data (1MB+)
   - Video-like data (random bytes, 50KB+)
@@ -71,11 +129,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **EncryptOptions simplified**: Removed `minSaltLength` and `maxSaltLength` - use `rules.saltRange` instead:
   ```ts
   // Before
-  encryptFise(text, cipher, rules, { minSaltLength: 20, maxSaltLength: 50 });
+  fiseEncrypt(text, cipher, rules, { minSaltLength: 20, maxSaltLength: 50 });
   
   // After
   const rules = { ...defaultRules, saltRange: { min: 20, max: 50 } };
-  encryptFise(text, cipher, rules);
+  fiseEncrypt(text, cipher, rules);
   ```
 
 ### Added
@@ -100,7 +158,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **FiseRules interface**: Simplified to only require 3 security points (offset, encodeLength, decodeLength)
-- **encryptFise/decryptFise**: Updated to use simplified FiseRules interface with internal normalization
+- **fiseEncrypt/fiseDecrypt**: Updated to use simplified FiseRules interface with internal normalization
 - **defaultRules**: Simplified implementation to match new interface
 - **Documentation**: Major updates across all docs:
   - Created comprehensive `QUICK_START.md` with backend/frontend examples
@@ -127,11 +185,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Breaking**: Updated import paths for cleaner usage. Users can now import directly from `fise` without specifying the `dist/` directory:
   ```ts
   // Before
-  import { encryptFise } from 'fise/dist/encryptFise';
+  import { fiseEncrypt } from 'fise/dist/fiseEncrypt';
   import { defaultRules } from 'fise/dist/rules/defaultRules';
   
   // After
-  import { encryptFise, decryptFise, xorCipher, defaultRules } from 'fise';
+  import { fiseEncrypt, fiseDecrypt, defaultRules } from 'fise';
   ```
 - Added `exports` field to `package.json` for modern Node.js module resolution
 - Created main entry point at `src/index.ts` that exports all public APIs
@@ -139,7 +197,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - Main entry point (`src/index.ts`) exporting all public APIs:
-  - `encryptFise`, `decryptFise`
+  - `fiseEncrypt`, `fiseDecrypt`
   - `xorCipher`
   - `defaultRules`, `scanningRulesExample`
   - All TypeScript types
@@ -159,7 +217,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rule-based, keyless envelope design
 - Default rules implementation (`defaultRules`)
 - XOR cipher implementation (`xorCipher`)
-- Core encryption/decryption functions (`encryptFise`, `decryptFise`)
+- Core encryption/decryption functions (`fiseEncrypt`, `fiseDecrypt`)
 - Comprehensive test suite covering:
   - Basic functionality and roundtrips
   - Edge cases (empty strings, long strings, JSON, Unicode)
@@ -175,6 +233,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Use cases (`docs/USE_CASES.md`)
   - Specification (`docs/SPEC.md`)
 
+[0.1.5]: https://github.com/anbkit/fise/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/anbkit/fise/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/anbkit/fise/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/anbkit/fise/compare/v0.1.1...v0.1.2

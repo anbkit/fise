@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert";
 import { FiseBuilderInstance } from "../dist/rules/builder.instance.js";
 import { FiseBuilder } from "../dist/rules/builder.js";
-import { encryptFise, decryptFise } from "../dist/encryptFise.js";
+import { fiseEncrypt, fiseDecrypt } from "../dist/index.js";
 import { xorCipher } from "../dist/core/xorCipher.js";
 
 // ============================================================================
@@ -133,7 +133,7 @@ test("FiseBuilderInstance - fluent API chaining", () => {
     assert.ok(rules.stripSalt);
 });
 
-test("FiseBuilderInstance - works with encryptFise and decryptFise", () => {
+test("FiseBuilderInstance - works with fiseEncrypt and fiseDecrypt", () => {
     const rules = FiseBuilder.create()
         .withOffset((c, ctx) => {
             const t = ctx.timestamp ?? 0;
@@ -144,8 +144,8 @@ test("FiseBuilderInstance - works with encryptFise and decryptFise", () => {
         .build();
 
     const plaintext = "Hello, FISE!";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
 
     assert.strictEqual(decrypted, plaintext);
 });
@@ -162,11 +162,11 @@ test("FiseBuilder.defaults() - creates valid rules", () => {
     assert.deepStrictEqual(rules.saltRange, { min: 10, max: 99 });
 });
 
-test("FiseBuilder.defaults() - works with encryptFise/decryptFise", () => {
+test("FiseBuilder.defaults() - works with fiseEncrypt/fiseDecrypt", () => {
     const rules = FiseBuilder.defaults().build();
     const plaintext = "Test message";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -180,11 +180,11 @@ test("FiseBuilder.simple() - creates valid rules", () => {
     assert.ok(offset >= 0 && offset < cipherText.length);
 });
 
-test("FiseBuilder.simple() - works with encryptFise/decryptFise", () => {
+test("FiseBuilder.simple() - works with fiseEncrypt/fiseDecrypt", () => {
     const rules = FiseBuilder.simple(13, 17).build();
     const plaintext = "Test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -197,11 +197,11 @@ test("FiseBuilder.timestamp() - creates valid rules", () => {
     assert.ok(offset >= 0 && offset < cipherText.length);
 });
 
-test("FiseBuilder.timestamp() - works with encryptFise/decryptFise", () => {
+test("FiseBuilder.timestamp() - works with fiseEncrypt/fiseDecrypt", () => {
     const rules = FiseBuilder.timestamp().build();
     const plaintext = "Test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -212,11 +212,11 @@ test("FiseBuilder.fixed() - creates valid rules", () => {
     assert.strictEqual(offset, Math.floor(cipherText.length / 2));
 });
 
-test("FiseBuilder.fixed() - works with encryptFise/decryptFise", () => {
+test("FiseBuilder.fixed() - works with fiseEncrypt/fiseDecrypt", () => {
     const rules = FiseBuilder.fixed().build();
     const plaintext = "Test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -227,11 +227,11 @@ test("FiseBuilder.lengthBased() - creates valid rules", () => {
     assert.strictEqual(offset, cipherText.length % 7);
 });
 
-test("FiseBuilder.lengthBased() - works with encryptFise/decryptFise", () => {
+test("FiseBuilder.lengthBased() - works with fiseEncrypt/fiseDecrypt", () => {
     const rules = FiseBuilder.lengthBased(7).build();
     const plaintext = "Test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -242,11 +242,11 @@ test("FiseBuilder.prime() - creates valid rules", () => {
     assert.ok(offset >= 0 && offset < cipherText.length);
 });
 
-test("FiseBuilder.prime() - works with encryptFise/decryptFise", () => {
+test("FiseBuilder.prime() - works with fiseEncrypt/fiseDecrypt", () => {
     const rules = FiseBuilder.prime().build();
     const plaintext = "Test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -257,11 +257,11 @@ test("FiseBuilder.multiFactor() - creates valid rules", () => {
     assert.ok(offset >= 0 && offset < cipherText.length);
 });
 
-test("FiseBuilder.multiFactor() - works with encryptFise/decryptFise", () => {
+test("FiseBuilder.multiFactor() - works with fiseEncrypt/fiseDecrypt", () => {
     const rules = FiseBuilder.multiFactor().build();
     const plaintext = "Test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -275,11 +275,11 @@ test("FiseBuilder.hex() - creates valid rules with hex encoding", () => {
     assert.strictEqual(decoded, 15);
 });
 
-test("FiseBuilder.hex() - works with encryptFise/decryptFise", () => {
+test("FiseBuilder.hex() - works with fiseEncrypt/fiseDecrypt", () => {
     const rules = FiseBuilder.hex().build();
     const plaintext = "Test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -293,11 +293,11 @@ test("FiseBuilder.base62() - creates valid rules with base62 encoding", () => {
     assert.strictEqual(decoded, testLen);
 });
 
-test("FiseBuilder.base62() - works with encryptFise/decryptFise", () => {
+test("FiseBuilder.base62() - works with fiseEncrypt/fiseDecrypt", () => {
     const rules = FiseBuilder.base62().build();
     const plaintext = "Test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -308,11 +308,11 @@ test("FiseBuilder.xor() - creates valid rules", () => {
     assert.ok(offset >= 0 && offset < cipherText.length);
 });
 
-test("FiseBuilder.xor() - works with encryptFise/decryptFise", () => {
+test("FiseBuilder.xor() - works with fiseEncrypt/fiseDecrypt", () => {
     const rules = FiseBuilder.xor().build();
     const plaintext = "Test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -326,11 +326,11 @@ test("FiseBuilder.base64() - creates valid rules with base64 charset encoding", 
     assert.strictEqual(decoded, testLen);
 });
 
-test("FiseBuilder.base64() - works with encryptFise/decryptFise", () => {
+test("FiseBuilder.base64() - works with fiseEncrypt/fiseDecrypt", () => {
     const rules = FiseBuilder.base64().build();
     const plaintext = "Test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -353,11 +353,11 @@ test("FiseBuilder.customChars() - throws error for short alphabet", () => {
     );
 });
 
-test("FiseBuilder.customChars() - works with encryptFise/decryptFise", () => {
+test("FiseBuilder.customChars() - works with fiseEncrypt/fiseDecrypt", () => {
     const rules = FiseBuilder.customChars("!@#$%^&*()").build();
     const plaintext = "Test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -386,8 +386,8 @@ test("FiseBuilder presets - all presets work with encrypt/decrypt", () => {
     for (const preset of presets) {
         try {
             const rules = preset.fn();
-            const encrypted = encryptFise(plaintext, xorCipher, rules);
-            const decrypted = decryptFise(encrypted, xorCipher, rules);
+            const encrypted = fiseEncrypt(plaintext, rules);
+            const decrypted = fiseDecrypt(encrypted, rules);
             assert.strictEqual(
                 decrypted,
                 plaintext,
@@ -408,8 +408,8 @@ test("FiseBuilder - presets can be customized further", () => {
 
     // Should still work
     const plaintext = "Test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -420,15 +420,15 @@ test("FiseBuilder - different presets produce different envelopes", () => {
     const rules2 = FiseBuilder.hex().build();
     const rules3 = FiseBuilder.timestamp(13, 17).build();
 
-    const encrypted1 = encryptFise(plaintext, xorCipher, rules1);
-    const encrypted2 = encryptFise(plaintext, xorCipher, rules2);
-    const encrypted3 = encryptFise(plaintext, xorCipher, rules3);
+    const encrypted1 = fiseEncrypt(plaintext, rules1);
+    const encrypted2 = fiseEncrypt(plaintext, rules2);
+    const encrypted3 = fiseEncrypt(plaintext, rules3);
 
     // Due to random salt, they should be different
     // But we can verify they all decrypt correctly
-    assert.strictEqual(decryptFise(encrypted1, xorCipher, rules1), plaintext);
-    assert.strictEqual(decryptFise(encrypted2, xorCipher, rules2), plaintext);
-    assert.strictEqual(decryptFise(encrypted3, xorCipher, rules3), plaintext);
+    assert.strictEqual(fiseDecrypt(encrypted1, rules1), plaintext);
+    assert.strictEqual(fiseDecrypt(encrypted2, rules2), plaintext);
+    assert.strictEqual(fiseDecrypt(encrypted3, rules3), plaintext);
 });
 
 test("FiseBuilderInstance - encoding/decoding roundtrip for all presets", () => {
@@ -464,8 +464,8 @@ test("FiseBuilderInstance - offset validation", () => {
 
     // Offset should work correctly
     const plaintext = "test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -473,8 +473,8 @@ test("FiseBuilderInstance - empty string handling", () => {
     const rules = FiseBuilder.defaults().build();
 
     const plaintext = "";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -498,19 +498,19 @@ test("FiseBuilderInstance - custom salt range affects encryption", () => {
         .build();
 
     const plaintext = "Test";
-    const encrypted1 = encryptFise(plaintext, xorCipher, rules1);
-    const encrypted2 = encryptFise(plaintext, xorCipher, rules2);
+    const encrypted1 = fiseEncrypt(plaintext, rules1);
+    const encrypted2 = fiseEncrypt(plaintext, rules2);
 
     // Both should decrypt correctly
-    assert.strictEqual(decryptFise(encrypted1, xorCipher, rules1), plaintext);
-    assert.strictEqual(decryptFise(encrypted2, xorCipher, rules2), plaintext);
+    assert.strictEqual(fiseDecrypt(encrypted1, rules1), plaintext);
+    assert.strictEqual(fiseDecrypt(encrypted2, rules2), plaintext);
 });
 
 test("FiseBuilderInstance - head salt extraction works", () => {
-    // Note: encryptFise always appends salt at the end, so head-based extraction
+    // Note: fiseEncrypt always appends salt at the end, so head-based extraction
     // is only useful for custom encryption implementations. This test verifies
     // that the extraction functions work correctly, but we can't test full
-    // encrypt/decrypt with head salt using the standard encryptFise function.
+    // encrypt/decrypt with head salt using the standard fiseEncrypt function.
     const rules = FiseBuilder.create()
         .withOffset((c) => Math.floor(c.length / 2))
         .withEncodeLength((len) => len.toString(36).padStart(2, "0"))
@@ -661,8 +661,8 @@ test("FiseBuilderInstance - all presets handle long strings", () => {
 
     for (const presetFn of presets) {
         const rules = presetFn();
-        const encrypted = encryptFise(longString, xorCipher, rules);
-        const decrypted = decryptFise(encrypted, xorCipher, rules);
+        const encrypted = fiseEncrypt(longString, rules);
+        const decrypted = fiseDecrypt(encrypted, rules);
         assert.strictEqual(decrypted, longString, `Preset ${presetFn.name} failed with long string`);
     }
 });
@@ -677,8 +677,8 @@ test("FiseBuilderInstance - all presets handle special characters", () => {
 
     for (const presetFn of presets) {
         const rules = presetFn();
-        const encrypted = encryptFise(specialString, xorCipher, rules);
-        const decrypted = decryptFise(encrypted, xorCipher, rules);
+        const encrypted = fiseEncrypt(specialString, rules);
+        const decrypted = fiseDecrypt(encrypted, rules);
         assert.strictEqual(decrypted, specialString, `Preset ${presetFn.name} failed with special chars`);
     }
 });
@@ -792,8 +792,8 @@ test("FiseBuilderInstance - all presets work with various string lengths", () =>
     for (const presetFn of presets) {
         const rules = presetFn();
         for (const testString of testStrings) {
-            const encrypted = encryptFise(testString, xorCipher, rules);
-            const decrypted = decryptFise(encrypted, xorCipher, rules);
+            const encrypted = fiseEncrypt(testString, rules);
+            const decrypted = fiseDecrypt(encrypted, rules);
             assert.strictEqual(
                 decrypted,
                 testString,
@@ -817,8 +817,8 @@ test("FiseBuilderInstance - all presets work with timestamp option", () => {
 
     for (const presetFn of presets) {
         const rules = presetFn();
-        const encrypted = encryptFise(plaintext, xorCipher, rules, { timestamp });
-        const decrypted = decryptFise(encrypted, xorCipher, rules, { timestamp });
+        const encrypted = fiseEncrypt(plaintext, rules, { timestamp });
+        const decrypted = fiseDecrypt(encrypted, rules, { timestamp });
         assert.strictEqual(decrypted, plaintext, `Preset ${presetFn.name} failed with timestamp`);
     }
 });
@@ -835,8 +835,8 @@ test("FiseBuilderInstance - all presets work with metadata option", () => {
 
     for (const presetFn of presets) {
         const rules = presetFn();
-        const encrypted = encryptFise(plaintext, xorCipher, rules, { metadata });
-        const decrypted = decryptFise(encrypted, xorCipher, rules, { metadata });
+        const encrypted = fiseEncrypt(plaintext, rules, { metadata });
+        const decrypted = fiseDecrypt(encrypted, rules, { metadata });
         assert.strictEqual(decrypted, plaintext, `Preset ${presetFn.name} failed with metadata`);
     }
 });
@@ -853,8 +853,8 @@ test("FiseBuilder.simple() - different multiplier/modulo combinations", () => {
     for (const [mult, mod] of combinations) {
         const rules = FiseBuilder.simple(mult, mod).build();
         const plaintext = "Test";
-        const encrypted = encryptFise(plaintext, xorCipher, rules);
-        const decrypted = decryptFise(encrypted, xorCipher, rules);
+        const encrypted = fiseEncrypt(plaintext, rules);
+        const decrypted = fiseDecrypt(encrypted, rules);
         assert.strictEqual(decrypted, plaintext, `simple(${mult}, ${mod}) failed`);
     }
 });
@@ -870,8 +870,8 @@ test("FiseBuilder.timestamp() - different multiplier/modulo combinations", () =>
     for (const [mult, mod] of combinations) {
         const rules = FiseBuilder.timestamp(mult, mod).build();
         const plaintext = "Test";
-        const encrypted = encryptFise(plaintext, xorCipher, rules);
-        const decrypted = decryptFise(encrypted, xorCipher, rules);
+        const encrypted = fiseEncrypt(plaintext, rules);
+        const decrypted = fiseDecrypt(encrypted, rules);
         assert.strictEqual(decrypted, plaintext, `timestamp(${mult}, ${mod}) failed`);
     }
 });
@@ -889,8 +889,8 @@ test("FiseBuilder.prime() - different prime combinations", () => {
     for (const [mult, mod] of combinations) {
         const rules = FiseBuilder.prime(mult, mod).build();
         const plaintext = "Test";
-        const encrypted = encryptFise(plaintext, xorCipher, rules);
-        const decrypted = decryptFise(encrypted, xorCipher, rules);
+        const encrypted = fiseEncrypt(plaintext, rules);
+        const decrypted = fiseDecrypt(encrypted, rules);
         assert.strictEqual(decrypted, plaintext, `prime(${mult}, ${mod}) failed`);
     }
 });
@@ -901,8 +901,8 @@ test("FiseBuilder.lengthBased() - different modulo values", () => {
     for (const mod of modulos) {
         const rules = FiseBuilder.lengthBased(mod).build();
         const plaintext = "Test message";
-        const encrypted = encryptFise(plaintext, xorCipher, rules);
-        const decrypted = decryptFise(encrypted, xorCipher, rules);
+        const encrypted = fiseEncrypt(plaintext, rules);
+        const decrypted = fiseDecrypt(encrypted, rules);
         assert.strictEqual(decrypted, plaintext, `lengthBased(${mod}) failed`);
     }
 });
@@ -919,8 +919,8 @@ test("FiseBuilder.customChars() - various alphabet sizes", () => {
     for (const alphabet of alphabets) {
         const rules = FiseBuilder.customChars(alphabet).build();
         const plaintext = "Test";
-        const encrypted = encryptFise(plaintext, xorCipher, rules);
-        const decrypted = decryptFise(encrypted, xorCipher, rules);
+        const encrypted = fiseEncrypt(plaintext, rules);
+        const decrypted = fiseDecrypt(encrypted, rules);
         assert.strictEqual(decrypted, plaintext, `customChars with ${alphabet.length} chars failed`);
     }
 });
@@ -945,7 +945,7 @@ test("FiseBuilderInstance - chaining all optional methods", () => {
     assert.ok(rules.stripSalt);
 
     // Note: head salt extraction is for custom implementations
-    // Standard encryptFise uses tail-based extraction, so we test extraction functions directly
+    // Standard fiseEncrypt uses tail-based extraction, so we test extraction functions directly
     const envelope = "salt12345ciphertext";
     const saltLen = 10;
     const salt = rules.extractSalt(envelope, saltLen, {});
@@ -988,8 +988,8 @@ test("FiseBuilderInstance - multiple encryption cycles with same rules", () => {
 
     // Encrypt and decrypt multiple times
     for (let i = 0; i < 10; i++) {
-        const encrypted = encryptFise(plaintext, xorCipher, rules);
-        const decrypted = decryptFise(encrypted, xorCipher, rules);
+        const encrypted = fiseEncrypt(plaintext, rules);
+        const decrypted = fiseDecrypt(encrypted, rules);
         assert.strictEqual(decrypted, plaintext, `Cycle ${i + 1} failed`);
     }
 });
@@ -1107,8 +1107,8 @@ test("FiseBuilderInstance - all presets handle unicode characters", () => {
     for (const presetFn of presets) {
         const rules = presetFn();
         for (const testString of unicodeStrings) {
-            const encrypted = encryptFise(testString, xorCipher, rules);
-            const decrypted = decryptFise(encrypted, xorCipher, rules);
+            const encrypted = fiseEncrypt(testString, rules);
+            const decrypted = fiseDecrypt(encrypted, rules);
             assert.strictEqual(decrypted, testString, `Preset ${presetFn.name} failed with unicode`);
         }
     }
@@ -1131,8 +1131,8 @@ test("FiseBuilderInstance - all presets handle JSON data", () => {
 
     for (const presetFn of presets) {
         const rules = presetFn();
-        const encrypted = encryptFise(jsonData, xorCipher, rules);
-        const decrypted = decryptFise(encrypted, xorCipher, rules);
+        const encrypted = fiseEncrypt(jsonData, rules);
+        const decrypted = fiseDecrypt(encrypted, rules);
         assert.strictEqual(decrypted, jsonData, `Preset ${presetFn.name} failed with JSON`);
 
         // Verify it's valid JSON
@@ -1160,8 +1160,8 @@ test("FiseBuilderInstance - salt range edge cases", () => {
 
         // Should still work
         const plaintext = "Test";
-        const encrypted = encryptFise(plaintext, xorCipher, rules);
-        const decrypted = decryptFise(encrypted, xorCipher, rules);
+        const encrypted = fiseEncrypt(plaintext, rules);
+        const decrypted = fiseDecrypt(encrypted, rules);
         assert.strictEqual(decrypted, plaintext);
     }
 });
@@ -1279,8 +1279,8 @@ test("FiseBuilderInstance - complex chaining with all methods", () => {
 
     // Should work with encryption
     const plaintext = "Complex test";
-    const encrypted = encryptFise(plaintext, xorCipher, rules);
-    const decrypted = decryptFise(encrypted, xorCipher, rules);
+    const encrypted = fiseEncrypt(plaintext, rules);
+    const decrypted = fiseDecrypt(encrypted, rules);
     assert.strictEqual(decrypted, plaintext);
 });
 
@@ -1293,11 +1293,11 @@ test("FiseBuilderInstance - preset customization preserves functionality", () =>
     const plaintext = "Test";
 
     // Both should work
-    const encrypted1 = encryptFise(plaintext, xorCipher, baseRules);
-    const encrypted2 = encryptFise(plaintext, xorCipher, customizedRules);
+    const encrypted1 = fiseEncrypt(plaintext, baseRules);
+    const encrypted2 = fiseEncrypt(plaintext, customizedRules);
 
-    assert.strictEqual(decryptFise(encrypted1, xorCipher, baseRules), plaintext);
-    assert.strictEqual(decryptFise(encrypted2, xorCipher, customizedRules), plaintext);
+    assert.strictEqual(fiseDecrypt(encrypted1, baseRules), plaintext);
+    assert.strictEqual(fiseDecrypt(encrypted2, customizedRules), plaintext);
 
     // Salt ranges should be different
     assert.notDeepStrictEqual(baseRules.saltRange, customizedRules.saltRange);

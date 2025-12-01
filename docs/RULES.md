@@ -167,7 +167,7 @@ const rules: FiseRules = {
 2. **Use timestamp for rotation** - Pass `timestamp` in options (backend only):
    ```typescript
    // backend.ts
-   encryptFise(text, cipher, rules, { 
+   fiseEncrypt(text, cipher, rules, { 
      timestamp: Math.floor(Date.now() / 60000) 
    });
    ```

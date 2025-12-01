@@ -63,12 +63,11 @@ interface FiseRules<T extends string | Uint8Array = string> {
 
 ## Functions
 
-### encryptBinaryFise
+### fiseBinaryEncrypt
 
 ```typescript
-function encryptBinaryFise(
+function fiseBinaryEncrypt(
   binaryData: Uint8Array,
-  cipher: FiseBinaryCipher,
   rules: FiseRules<string | Uint8Array>, // Rules can be shared!
   options: EncryptOptions = {}
 ): Uint8Array
@@ -78,19 +77,18 @@ Encrypts binary data with a pure binary envelope (no base64 conversion).
 
 **Example**:
 ```typescript
-import { encryptBinaryFise, xorBinaryCipher, defaultBinaryRules } from 'fise';
+import { fiseBinaryEncrypt, defaultBinaryRules } from 'fise';
 
 const videoData = new Uint8Array([...]); // Your binary data
-const encrypted = encryptBinaryFise(videoData, xorBinaryCipher, defaultBinaryRules);
+const encrypted = fiseBinaryEncrypt(videoData, defaultBinaryRules);
 // Returns: Uint8Array (pure binary envelope)
 ```
 
-### decryptBinaryFise
+### fiseBinaryDecrypt
 
 ```typescript
-function decryptBinaryFise(
+function fiseBinaryDecrypt(
   envelope: Uint8Array,
-  cipher: FiseBinaryCipher,
   rules: FiseRules<string | Uint8Array>, // Rules can be shared!
   options: DecryptOptions = {}
 ): Uint8Array
@@ -100,9 +98,9 @@ Decrypts a binary envelope back to original binary data.
 
 **Example**:
 ```typescript
-import { decryptBinaryFise, xorBinaryCipher, defaultBinaryRules } from 'fise';
+import { fiseBinaryDecrypt, defaultBinaryRules } from 'fise';
 
-const decrypted = decryptBinaryFise(encrypted, xorBinaryCipher, defaultBinaryRules);
+const decrypted = fiseBinaryDecrypt(encrypted, defaultBinaryRules);
 // Returns: Uint8Array (original binary data)
 ```
 
@@ -147,10 +145,10 @@ One of the key features is that **rules can be shared** between string and binar
 const rules = FiseBuilder.defaults().build();
 
 // Use for string encryption
-const encryptedString = encryptFise("Hello", xorCipher, rules);
+const encryptedString = fiseEncrypt("Hello", rules);
 
 // Use for binary encryption (rules automatically adapt!)
-const encryptedBinary = encryptBinaryFise(binaryData, xorBinaryCipher, rules);
+const encryptedBinary = fiseBinaryEncrypt(binaryData, rules);
 ```
 
 The `normalizeFiseRulesBinary()` function automatically adapts text-based rules to binary operations:
@@ -176,7 +174,7 @@ The `normalizeFiseRulesBinary()` function automatically adapts text-based rules 
 - Random bytes (0-255) for maximum entropy
 
 ### Backward compatibility
-- String-based API (`encryptFise`/`decryptFise`) remains unchanged
+- String-based API (`fiseEncrypt`/`fiseDecrypt`) remains unchanged
 - Binary API is additive - no breaking changes
 - Both can coexist in the same application
 
@@ -188,7 +186,7 @@ The `normalizeFiseRulesBinary()` function automatically adapts text-based rules 
 import { defaultBinaryRules } from 'fise';
 
 // Pre-configured binary rules optimized for Uint8Array
-const encrypted = encryptBinaryFise(data, xorBinaryCipher, defaultBinaryRules);
+const encrypted = fiseBinaryEncrypt(data, defaultBinaryRules);
 ```
 
 ### Custom Binary Rules
@@ -225,8 +223,8 @@ import { FiseBuilder } from 'fise';
 const rules = FiseBuilder.defaults().build();
 
 // Can be used for both string and binary
-const strEncrypted = encryptFise("text", xorCipher, rules);
-const binEncrypted = encryptBinaryFise(binaryData, xorBinaryCipher, rules);
+const strEncrypted = fiseEncrypt("text", rules);
+const binEncrypted = fiseBinaryEncrypt(binaryData, rules);
 ```
 
 ## Performance Considerations
@@ -251,13 +249,13 @@ If you're currently using string-based encryption and want to switch to binary:
 ```typescript
 // Before (string-based)
 const text = "Hello World";
-const encrypted = encryptFise(text, xorCipher, rules);
-const decrypted = decryptFise(encrypted, xorCipher, rules);
+const encrypted = fiseEncrypt(text, rules);
+const decrypted = fiseDecrypt(encrypted, rules);
 
 // After (binary-based)
 const binary = new TextEncoder().encode("Hello World");
-const encrypted = encryptBinaryFise(binary, xorBinaryCipher, rules);
-const decrypted = decryptBinaryFise(encrypted, xorBinaryCipher, rules);
+const encrypted = fiseBinaryEncrypt(binary, rules);
+const decrypted = fiseBinaryDecrypt(encrypted, rules);
 const text = new TextDecoder().decode(decrypted);
 ```
 

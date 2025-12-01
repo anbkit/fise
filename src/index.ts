@@ -1,5 +1,5 @@
-export { encryptFise, decryptFise } from "./encryptFise.js";
-export { encryptBinaryFise, decryptBinaryFise } from "./encryptBinaryFise.js";
+export { fiseEncrypt, fiseDecrypt } from "./fiseEncrypt.js";
+export { fiseBinaryEncrypt, fiseBinaryDecrypt } from "./fiseBinaryEncrypt.js";
 export { xorCipher } from "./core/xorCipher.js";
 export { xorBinaryCipher } from "./core/xorBinaryCipher.js";
 export { randomSalt, randomSaltBinary } from "./core/utils.js";

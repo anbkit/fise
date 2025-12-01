@@ -12,6 +12,8 @@ import { DEFAULT_OFFSET_PARAMS } from "../core/constants.js";
  * Everything else uses defaults: tail-based salt extraction, DEFAULT_SALT_RANGE
  *
  * **Type-safe**: Only accepts Uint8Array inputs, no runtime string checks needed!
+ * @see https://github.com/fise-io/fise/blob/main/src/rules/defaultBinaryRules.ts
+ * @link https://github.com/anbkit/fise/blob/main/docs/RULES.md
  */
 export const defaultBinaryRules: FiseRules<Uint8Array> = {
 	offset(cipherText: Uint8Array, ctx) {

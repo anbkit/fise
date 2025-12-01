@@ -10,6 +10,8 @@ import { DEFAULT_OFFSET_PARAMS } from "../core/constants.js";
  *
  * Everything else is automated (salt extraction, brute-force, etc.)
  * This is the recommended way to create rules - just specify the 3 security points!
+ * @see https://github.com/anbkit/fise/blob/main/src/rules/defaultRules.ts
+ * @link https://github.com/anbkit/fise/blob/main/docs/RULES.md
  */
 export const defaultRules: FiseRules<string> = {
 	offset(cipherText: string, ctx) {

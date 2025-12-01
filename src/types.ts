@@ -9,7 +9,7 @@ export interface FiseContext {
 	 * 
 	 * @example
 	 * // Pass productId in metadata
-	 * encryptFise(data, cipher, rules, { metadata: { productId: 123 } });
+	 * fiseEncrypt(data, rules, { metadata: { productId: 123 } });
 	 * // Access in rules: ctx.metadata?.productId
 	 */
 	metadata?: Record<string, any>;
@@ -134,6 +134,16 @@ export interface EncryptOptions {
 	 * Useful for passing custom values like productId, userId, etc.
 	 */
 	metadata?: Record<string, any>;
+	/**
+	 * Optional cipher implementation for string encryption. Defaults to xorCipher if not provided.
+	 * Only specify if you need a custom cipher implementation.
+	 */
+	cipher?: FiseCipher;
+	/**
+	 * Optional binary cipher implementation for binary encryption. Defaults to xorBinaryCipher if not provided.
+	 * Only specify if you need a custom binary cipher implementation.
+	 */
+	binaryCipher?: FiseBinaryCipher;
 }
 
 export interface DecryptOptions {
@@ -143,4 +153,14 @@ export interface DecryptOptions {
 	 * Must match the metadata used during encryption for proper decryption.
 	 */
 	metadata?: Record<string, any>;
+	/**
+	 * Optional cipher implementation for string decryption. Defaults to xorCipher if not provided.
+	 * Must match the cipher used during encryption.
+	 */
+	cipher?: FiseCipher;
+	/**
+	 * Optional binary cipher implementation for binary decryption. Defaults to xorBinaryCipher if not provided.
+	 * Must match the binary cipher used during encryption.
+	 */
+	binaryCipher?: FiseBinaryCipher;
 }

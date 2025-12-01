@@ -65,7 +65,7 @@ interface FiseRules {
 ```
 
 Plus:
-- `encryptFise()` / `decryptFise()` functions
+- `fiseEncrypt()` / `fiseDecrypt()` functions
 - XOR cipher (or custom cipher)
 - Base64 encode/decode helpers
 - Random salt generator

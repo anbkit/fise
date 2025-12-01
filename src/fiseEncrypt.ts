@@ -2,27 +2,28 @@ import { randomSalt } from "./core/utils.js";
 import { normalizeFiseRules } from "./core/normalizeFiseRules.js";
 import { DEFAULT_SALT_RANGE, DUMMY_CHAR } from "./core/constants.js";
 import { EncryptOptions, DecryptOptions, FiseCipher, FiseContext, FiseRules } from "./types.js";
+import { xorCipher } from "./core/xorCipher.js";
 
 /**
  * Encrypts plaintext string using FISE transformation.
  *
- * For binary data encryption, use `encryptBinaryFise()` instead.
+ * For binary data encryption, use `fiseBinaryEncrypt()` instead.
  *
  * @param plaintext - The string to encrypt
- * @param cipher - The cipher implementation to use (e.g., xorCipher)
  * @param rules - The rules implementation that defines encoding/offset behavior.
  *                Only requires offset, encodeLength, and decodeLength (3 security points).
  *                Everything else is optional and will be automated.
- * @param options - Optional encryption options (timestamp, metadata)
+ * @param options - Optional encryption options (timestamp, metadata, cipher).
+ *                  Defaults to xorCipher if cipher is not specified.
  * @returns The encrypted envelope string
  *
  */
-export function encryptFise(
+export function fiseEncrypt(
 	plaintext: string,
-	cipher: FiseCipher,
 	rules: FiseRules<string>,
 	options: EncryptOptions = {}
 ): string {
+	const cipher = options.cipher ?? xorCipher;
 	// Normalize rules to fill in optional methods with defaults
 	const fullRules = normalizeFiseRules(rules);
 
@@ -56,22 +57,23 @@ export function encryptFise(
 /**
  * Decrypts a FISE envelope string back to plaintext.
  *
- * For binary data decryption, use `decryptBinaryFise()` instead.
+ * For binary data decryption, use `fiseBinaryDecrypt()` instead.
  *
  * @param envelope - The encrypted envelope string
- * @param cipher - The cipher implementation to use for decryption (e.g., xorCipher)
  * @param rules - The rules implementation that matches the one used for encryption
- * @param options - Optional decryption options (timestamp and metadata must match encryption)
+ * @param options - Optional decryption options (timestamp, metadata, cipher).
+ *                  Defaults to xorCipher if cipher is not specified.
+ *                  Timestamp and metadata must match encryption.
  * @returns The decrypted plaintext string
  * @throws Error if the envelope cannot be decoded or if timestamp/metadata doesn't match
  *
  */
-export function decryptFise(
+export function fiseDecrypt(
 	envelope: string,
-	cipher: FiseCipher,
 	rules: FiseRules<string>,
 	options: DecryptOptions = {}
 ): string {
+	const cipher = options.cipher ?? xorCipher;
 	// Normalize rules to fill in optional methods with defaults
 	const fullRules = normalizeFiseRules(rules);
 

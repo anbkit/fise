@@ -5,21 +5,15 @@ The Rule Builder provides a fluent API for creating custom FISE rules without wr
 ## Quick Start
 
 ```ts
-import { RuleBuilder, encryptFise, decryptFise, xorCipher } from "fise";
+import { FiseBuilder, fiseEncrypt, fiseDecrypt } from "fise";
 
 // Create custom rules
-const customRules = RuleBuilder.create()
-  .encodedLengthSize(2)
-  .offset("timestamp-linear", { multiplier: 7, modulo: 11 })
-  .encoding("base36")
-  .saltExtraction("tail")
-  .preExtraction("brute-force", { minSaltLength: 10, maxSaltLength: 99 })
-  .build();
+const customRules = FiseBuilder.defaults().build();
 
 // Use the rules
 const plaintext = "Hello, world!";
-const encrypted = encryptFise(plaintext, xorCipher, customRules);
-const decrypted = decryptFise(encrypted, xorCipher, customRules);
+const encrypted = fiseEncrypt(plaintext, customRules);
+const decrypted = fiseDecrypt(encrypted, customRules);
 ```
 
 ## Presets
@@ -29,7 +23,7 @@ const decrypted = decryptFise(encrypted, xorCipher, customRules);
 Creates rules similar to the built-in `defaultRules`:
 
 ```ts
-const rules = RuleBuilder.defaults().build();
+const rules = FiseBuilder.defaults().build();
 ```
 
 ### Scanning Rules
@@ -255,8 +249,8 @@ const customScanningRules = RuleBuilder.create()
    ```ts
    const testCases = ["", "short", "A".repeat(1000), "Hello 🌍 世界"];
    for (const plaintext of testCases) {
-     const encrypted = encryptFise(plaintext, xorCipher, rules);
-     const decrypted = decryptFise(encrypted, xorCipher, rules);
+     const encrypted = fiseEncrypt(plaintext, rules);
+     const decrypted = fiseDecrypt(encrypted, rules);
      assert(decrypted === plaintext);
    }
    ```
