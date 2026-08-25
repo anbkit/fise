@@ -1,859 +1,589 @@
-# FISE Engineering Whitepaper (v1.0)
+# FISE Engineering Whitepaper — Version 1.1
 
-**Fast Internet Secure Extensible — a rule-based, keyless, high-performance _semantic envelope_ for Web/API & Media data.**
-
-> **Positioning (TL;DR)**  
-> FISE is **not cryptography** and does not replace TLS/AuthZ. It is a **semantic obfuscation layer** that raises the _cost and time_ of scraping and reverse-engineering client-visible data, while keeping runtime overhead extremely low.
-
----
+**Fast Interoperable Structured Envelope: profile-governed reversible framing
+for string and binary application data**
 
 ## Abstract
 
-Modern web apps must render meaningful JSON on the client. HTTPS protects transport, but **data meaning** remains exposed in the browser, making large-scale scraping and cloning cheap. Traditional client-side encryption requires keys in the frontend, which attackers can read; heavy crypto also adds latency.
-
-**Design principle:** Rather than distributing static client keys, FISE injects **shared, ephemeral rules** ("rules-as-code") that are bound to context and rotate quickly; any decoder inferred from one session does **not** generalize to others or future windows.
-
-**FISE** proposes a **rule-based, keyless transformation pipeline** that "wraps" responses in a polymorphic **semantic envelope**. Each application (and optionally each session/request) uses a unique, rotating rule set to assemble salt, offsets, and metadata into a structure with **no protocol-level universal decoder**—attackers must tailor a decoder per pipeline. FISE focuses on _raising attacker cost_ (not secrecy), with **microsecond-level** encode/decode on commodity devices.
-
-FISE complements—not replaces—TLS, authentication/authorization, backend rate-limits, and cryptography for secrets. It is best suited where **data itself is the asset** (e.g., curated POI, pricing, recommendations, AI metadata).
-
-FISE supports **chunked, block-local pipelines** that enable **parallel encode/decode and streaming**, allowing clients to begin rendering **before** the full payload arrives. It generalizes to **media** (images/video) via framed, chunked pipelines that preserve codec/container compatibility while enabling parallel unwrap on the client. FISE further supports **per-session, server-injected rules**, avoiding static bundles and reducing reuse value of a captured decoder.
-
----
-
-## 1. Introduction
-
-REST/GraphQL APIs commonly return plaintext JSON. Despite TLS, the browser must see readable data, enabling:
-
--   automated scraping
--   competitive data harvesting / dataset cloning
--   inference of business logic from response shapes
--   unauthorized third-party reuse
-
-**Goal**: protect **semantic meaning** without frontend keys or heavy crypto, by **diversifying and rotating** a lightweight envelope that is cheap to run but expensive to reverse for each target.
-
----
-
-## 2. Problem Statement
-
-### 2.1 Client visibility is inherent
-
-Even with HTTPS:
-
--   DevTools exposes plaintext JSON.
--   Headless browsers can fetch like any user.
--   Response schemas leak domain logic.
-
-### 2.2 Why traditional crypto under-delivers on the client
-
--   **Keys must reside in the frontend** → discoverable.
--   **Operational cost** per request (key derivation/expansion, AEAD) is non-trivial on low-end clients.
--   Resulting ciphertext still needs **client-side decryption** → plaintext inevitably appears in memory/DOM.
-
-### 2.3 Scraping today is cheap
-
-A few fetch calls and pagination often suffice to replicate valuable datasets at scale, creating **business risk** wherever data is the moat.
-
----
-
-## 3. Design Philosophy
-
-**Core principle:** Rather than distributing static client keys, FISE injects **shared, ephemeral rules** ("rules-as-code") that are bound to context and rotate quickly. Any decoder inferred from one session does **not** generalize to others or future windows, making automated attacks at scale economically unattractive and hard to maintain.
-
-This yields the following properties:
-
-1. **Keyless by design** — no static client key to steal.
-2. **Security through diversity** — each app/session/request may use a different rule set.
-3. **Infinite customization** — salts, offsets, metadata channels, ciphers (optional), assembly strategies.
-4. **Semantic obfuscation** — protect _meaning_, not transport.
-5. **Cheap to run, costly to reverse** — microsecond-level ops; no protocol-level universal decoder.
-6. **Streaming & Parallel-ready** — rules can be designed block-local, enabling **per-chunk** encode/decode and multi-core execution.
-7. **Polymorphic-by-session** — rules can be **server-injected per session**, signed and short-lived, minimizing the reuse value of static reverse-engineering artifacts.
-
-### §3.1 Principle: Simple Local Ops → Emergent Complexity
-
-**Core spirit.** Each FISE *rule* is built from small, linear, easy-to-reason-about operations. When these operations are **bound to context** (bindings) and **composed** across chunks/sessions/time, they yield **highly complex envelopes** from an attacker’s point of view.
-
-**Simple primitives (local ops):**
-
-- `offset()` — decides **where** to place/read metadata (spatial diversity).
-- `encodeLength()/decodeLength()` — decides **how** length is represented (format diversity).
-- `extractSalt()/stripSalt()` (optional) — decides **how** salt/meta is arranged (structural diversity).
-- A **default XOR-style O(n) transform** in the reference profile (pluggable and optional).
-
-None of these are mathematically exotic; they are simple, local operations over bytes.
-
----
-
-#### How simple ops create emergent complexity
-
-1. **Context linkage.**  
-   Each step can be seeded by `rulesetId`, `chunkIndex`, `sessionIdHash`, `tsBucket`, etc. The same formulas produce **different concrete results** under different bindings, even if the rule code is identical.
-
-2. **Multi-lane metadata.**  
-   Salt/length/offsets can be spread across multiple “lanes” (base36/62, emoji, zero-width, parity/XOR lanes), so there is **no protocol-level fixed format** that holds across deployments or even across sessions.
-
-3. **Flexible meta-space.**  
-   Implementations may allocate **M** bytes as the search space for `encodeLength()` and related metadata:
-
-   -- Even if **offset** and **saltLen** partially leak, an attacker still has to reason about **which positions** in those **M** bytes actually encode length and **how** they encode it. The difficulty scales with **(position choices × representation variants)**, while legitimate decoding remains **O(1)/O(n)** (read a fixed window, apply a small function).
-
-   - The difficulty scales with **(position choices × representation variants)**, while legitimate decoding remains **O(1)/O(n)** (read a fixed window, apply a small function).
-
-4. **Per-chunk heterogeneity.**  
-   A small pool (e.g. 3–8) of rules can be selected per chunk, deterministically from a seed/bindings. At the system level, complexity grows roughly as **H^C** for **H** rules over **C** chunks: a single response may already exercise a large portion of the rule space.
-
----
-
-#### Back-of-the-envelope intuition (illustrative only)
-
-Let:
-
-- **M** = number of bytes available as a “length window” for `encodeLength()`,  
-- **k** = number of positions in that window that are actually meaningful under a given rule,  
-- **H** = size of the per-chunk rule pool,  
-- **C** = number of chunks in a response.
-
-A very rough upper-bound for structural configurations is:
-
-- window choices ≈ `C(M, k)` × (*representation variants*), and  
-- per-chunk rule assignment ≈ `H^C`.
-
-So the effective search space behaves like:
-
-> **`H^C × C(M, k)` (× representation variants)**
-
-from the attacker’s perspective, while each local step for a legitimate client is still a small, linear-time operation (add/mul/mod/XOR, simple base conversions, fixed-window reads).
-
-This is not a formal security bound, but an intuition: **outputs can appear complex and hard to reuse at scale without the rule**, even though each primitive is simple.
-
----
-
-#### Deliberate flexibility
-
-Deployers can:
-
-- **widen or narrow** the meta-space **M**,
-- change which lanes carry length/salt/offset information,
-- adjust **rotation cadence** (per deployment, per session, per time bucket),
-- choose whether to use the default XOR transform, no extra transform, or a custom cipher.
-
-As these parameters change, the attacker’s **rule inference/search space** grows, while runtime for honest clients remains cheap and linear.
-
-The reference implementation ships with a **fast default XOR-style O(n) transform**. When needed, a deployment can plug in a custom cipher via a simple interface, for example:
-
-```ts
-interface FiseCipher {
-  encrypt(plainData, salt);
-  decrypt(cipherData, salt);
-}
-```
----
-
-## 4. The FISE Transformation Pipeline
-
-A concrete deployment chooses and **rotates** among multiple rule sets. A typical encode flow:
-
-### 4.1 Salt & Entropy
-
--   Variable-length salt (10–99 chars or app-defined).
--   Entropy sources: CSPRNG (preferred), timestamp mixes, rolling checksums.
--   **Recommendation**: use server-side CSPRNG to avoid predictability.
-
-### 4.2 Metadata Encoding
-
-Encode salt length, offsets, rulesetId, optional request/session binding tags via one or more channels:
-
--   base36/base62/hex
--   emoji lanes
--   zero-width characters
--   XOR signatures / parity bits
-
-### 4.3 Optional Cipher Layer
-
--   XOR or AES/WASM stage is **optional** to balance performance vs. resilience.
--   If used, it **does not rely on a client secret** for security claims; it only raises effort.
-
-### 4.4 Offset Calculation
-
-Offsets decide where to place metadata, salt, and decoy. They may derive from:
-
--   rulesetId
--   time buckets
--   prime sequences / rolling checksums
--   request/session bindings
-
-### 4.5 Envelope Assembly
-
-Interleave (data + salt + metadata [+ decoy]) into a **non-deterministic**, non-fixed format.
-
-### 4.6 Final Output
-
-A string/byte stream with **no fixed structure** shared across deployments. There is **no protocol-level universal decoder**; decoding requires the **matching rule set**.
-
-### 4.7 Streaming/Framed Mode (optional)
-
--   Payload is split into **chunks**; each chunk carries **local metadata** (rulesetId, offsets) and optional **HMAC bindings** (server-side verify).
--   Interleave/drift parameters derive from **(rulesetId, chunkIndex, bindings)** → **no global dependency**, so chunks can be **encoded/decoded in parallel**.
--   A **super-header** specifies framing (`version`, `nChunks`, `flags`).
-
-### 4.8 Heterogeneous Per‑Chunk Rules (optional)
-
--   Each chunk MAY select a **different rule** from a bounded pool (e.g., 3–8) to increase diversity.
--   Selection is **deterministic** from bindings/seed: `rule_idx = PRNG(seed, chunkIndex) mod K`.
--   A **super‑header** carries a compact `rule_map`; each chunk stores `rule_idx` instead of full ids.
--   Preserve **block‑local semantics** so chunks decode independently; carry only **tiny deterministic state** if required.
-
-### 4.9 Server‑Injected Bootstrap (optional)
-
-**Goal:** deliver a **fresh rule** per session/request without changing the long‑cached runtime.
-
--   **Bootstrap snippet (HTML/SSR)**: server renders a tiny `<script type="module" nonce=...>` containing a compact **rule manifest** (e.g., DSL bytecode + metadata) and calls the stable **FISE runtime** to activate it.
--   **Signature**: include `sig = HMAC(serverKey, bytecode || manifest || bindings)`; the runtime verifies **before** enabling the rule.
--   **Bindings**: `(method|pathHash|sessionIdHash|tsBucket)` may be embedded to tie the rule to its context.
--   **Caching**: mark bootstrap **no‑store**; keep `fise-runtime.min.js` immutable and SRI‑pinned.
--   **Deterministic selection**: the per‑session rule can still define **heterogeneous per‑chunk** logic (see §4.8) using a small bounded pool.
-
----
-
-## 5. Decoding
-
-Given a matching rule set:
-
-1. Extract/locate metadata via channel heuristics.
-2. Recover salt length & offsets; validate request/session bindings.
-3. Remove salt/decoy; unwind transformations.
-4. Reverse optional cipher stage.
-5. Restore plaintext JSON for rendering.
-
-> **Framed mode.** The client may **decode chunk-by-chunk** (possibly in parallel workers) and **incrementally render** while the stream is arriving. If a rule needs cross-chunk state, carry a **small deterministic state** between chunks.
-
----
-
-## 6. Security Model
-
-### 6.1 What FISE mitigates
-
--   Commodity scrapers relying on stable, predictable JSON.
--   Universal or reusable decoders across many targets.
--   Blind replay/tamper (when **server verification** is enabled).
--   Rapid cloning of curated datasets (cost ↑).
-
-### 6.2 What FISE does **not** replace
-
--   TLS (transport), authentication/authorization, access control.
--   Backend bot controls (rate limit, behavior scoring).
--   Cryptography for secrets/PII.
--   DRM-like guarantees.
-
-### 6.3 Attacker-in-the-browser (AitB)
-
-Attackers can run your app, hook decode functions, or dump plaintext **after** decode. FISE **cannot prevent** post-decode access; it **raises the effort** to reach and sustain that point, especially under rotation and validation.
-
-### 6.4 Replay & Tamper (recommended hardening)
-
--   **Request/Session binding**: include a hash of `(method|pathHash|queryHash|sessionIdHash|tsBucket)` in metadata.
--   **Server-side verification**: HMAC (server key only) covering metadata & bindings to reject altered or stale envelopes.
--   **Short-lived validity**: time buckets + skew windows.
-
-### 6.5 Normalization resistance
-
--   Design channels that survive gzip, Unicode normalization, and CDN transformations.
--   Multi-channel redundancy to tolerate lossy intermediaries.
-
-### 6.6 Rotation
-
--   **Per-session** or **per-request** rule set rotation drastically increases reverse-engineering cost and decoder maintenance.
-
-### 6.7 Framed-mode Integrity
-
--   **Anti-reorder/tamper**: per-chunk **HMAC(meta \|\| chunkIndex \|\| bindings)** (server key only).
--   **Anti-replay**: include request/session bindings and **time buckets** in each chunk’s meta.
--   **Boundary hiding**: optional decoy/padding and variable chunk sizes.
-
-### 6.8 Heterogeneous Rule Pools
-
--   Limit pool size (e.g., 3–8) to bound code/metadata overhead and improve worker/WASM cache locality.
--   Include `rule_idx` and `chunkIndex` under **server HMAC** to prevent splice/reorder attacks.
--   Track field reliability per `rule_idx`; rotate out rules with poor normalization fitness.
-
-### 6.9 Server‑Injected Rules: Signature & Localized Fallout
-
--   **Trust on first use**: the runtime **rejects** unsigned/invalid manifests; use CSP nonces to restrict inline code.
--   **Localized leak**: compromise of one session’s rule has **limited reuse**; subsequent sessions rotate.
--   **Replay/tamper**: include `(sessionId|tsBucket|pathHash)` in the signed fields; per‑chunk HMAC continues to guard payload integrity.
-
-> **Claim wording**: We do **not** claim “impossible to decode.” We claim **no protocol-level universal decoder**, and **significant per-target cost** under rotation, validation, and normalization-resistant channels.
-
-### 6.10 Practical Hardness of Rule Inference _(Under Session/Time Rotation)_
-
-**Claim (practical):** With a sufficiently diverse **custom rules pipeline**, **per-session bindings**, **heterogeneous per-chunk rules**, and **temporal rotation**, inferring the exact rule in use for a specific envelope becomes **very hard within the rule's validity window**. Any decoder that is inferred tends to be **non-reusable** beyond its original session/time-bucket.
-
-#### 6.10.1 Complexity (Search-Space Upper Bound)
-
-Let **R** = total rule space size, **S** = number of active sessions, **T** = time buckets per hour, **C** = chunks per response, **H** = rule-pool size per chunk. A conservative upper bound for attacker search space per decoded response is:
-
-**O(R × S × T × H^C)** _(illustrative; parameters may not be fully independent in practice)_
-
-Example: R=1000, S=10,000, T=120, C=10, H=5  
-→ 1.16 × 10^16 combinations  
-→ At 1 ms/attempt: ≈368,000 years
-
-Defender cost: **O(1)** per request (hash-table/manifest lookup)  
-Attacker cost: **O(R × S × T × H^C)** per response
-
-**Asymmetry:** small, constant defender cost vs. exploding attacker maintenance cost.
-
-#### 6.10.2 Why This Is Hard in Practice
-
-1. **Non-stationarity (temporal):** Rule distribution rotates (e.g., every 30s). Attacker samples stale quickly; inferred decoders degrade to near random for new buckets/sessions.
-2. **Low sample budget:** Under i.i.d. assumption, Hoeffding suggests  
-   \(N = O\big(\frac{1}{\varepsilon^2}\log\frac{1}{\delta}\big)\) samples for ε-accurate inference. With ε=0.01, δ=0.01 → ~26,500. Rotation 30s @ 10 req/s gives ~300 samples → **~88× shortfall**.
-3. **Context binding + integrity:** Each envelope/chunk bound to `method | pathHash | sessionIdHash | tsBucket[|tokenHash(trunc)]` and signed server-side (`HMAC` with tag length **t** → forgery ≈ 2^-t). Decoders are **non-portable** across routes/sessions/buckets.
-4. **Heterogeneity across chunks:** Pool of 3–8 rules per chunk forces **H^C** combinations (e.g., 5^10 ≈ 9.7M). One chunk error breaks the whole response → automation **fragile**.
-5. **Attacker economics:** Defender ~0.1 ms CPU (O(1)); attacker hours per variant + constant re-work after rotation → **maintenance does not scale**.
-
-#### 6.10.3 Attack Models Considered
-
-Practical hardness against: **passive observation**, **active probing (per-session)**, **model extraction (staleness)**, **replay (bootstrap expiry/bindings)**, **collaborative sharing (non-transferable decoders)**.
-
-#### 6.10.4 Threat-Model Boundaries
-
-**In scope:** automated scrapers, mass extraction, API harvesting at scale.  
-**Out of scope:** nation-state adversaries, insider threats, full client compromise, formal cryptographic secrecy, quantum-model guarantees.
-
-**Positioning:** FISE sits between plaintext (no protection) and strong cryptography/DRM. It **complements** TLS/JWT/DPoP/DRM rather than replacing them.
-
-#### 6.10.5 Quantitative Metrics
-
-**Suggested measurements/targets:**
-
-1. Decoder Breakage Rate (DBR) **>95%** post-rotation
-2. Scraper Throughput Reduction (STR) **>90%**
-3. Mandatory Lag (ML) **> rule lifetime** (live profiles)
-4. Client TTFR overhead **P99 <100 ms**
-5. Legitimate Decode Success Rate (DSR) **>99.9%**
-6. Attacker Cost Multiplier (ACM) **>100×**
-
-_Note:_ Move empirical numbers to `docs/PERFORMANCE.md` once measured via A/B.
-
-#### 6.10.6 Disclaimers
-
-Not claiming **information-theoretic secrecy**, not a **replacement** for TLS/JWT/DRM, and **no cryptographic quantum guarantees**. FISE focuses on **reducing value** and **shortening useful lifetime** of unauthorized decoding via **economic asymmetry** and **temporal dynamics**.
-
-## 6.11 The Key-Management-Light Security Property
-
-**Central idea.** FISE targets _practical, time-bounded hardness_ without requiring any **client-side** secret keys. Server-side integrity remains anchored by a server secret (e.g., HMAC), but no reusable key is shipped to the client.
-
-### 6.11.1 The Paradigm Shift
-
-Traditional systems emphasize:
-
--   Secret keys in clients, strict key management, and long-lived guarantees.
-
-FISE emphasizes:
-
--   **No client-side keys** (nothing reusable to steal on the client),
--   **Time asymmetry** (**rotation > inference/automation**),
--   **Bounded protection** (value decays within a rotation window).
-
-### 6.11.2 Informal Security Rationale
-
-Let \(T_i\) be attacker time-to-infer a working decoder for a given session/bucket, and \(T_r\) the rotation period.
-FISE is *practically* safe when **\(T_i \gg T_r\)**, so any decoder becomes stale before it scales.
-
-Let \(C\) be attacker maintenance cost per session/bucket and \(V\) the exploitable value per unit data in that window.
-Economic safety improves as **\(C \gg V\)** (deterrence by cost).
-
-_Illustrative targets (to be validated):_ \(T_i = \text{hours}\), \(T_r = \text{tens of seconds}\) → strong time asymmetry; \(C/V \gg 1\) under rotation.
-
-
-### 6.11.3 Why Keys on the Client Aren’t Needed
-
--   FISE binds envelopes to context (`method|pathHash|sessionIdHash|tsBucket[|tokenHash(trunc)]`) and verifies integrity with a **server-only HMAC**.
--   The **client never holds a reusable decrypt key**. Rules are per-session/pool-per-chunk and rotate, so any recovered logic is short-lived and non-portable.
-
-> **Key insight:** Security is achieved via **temporal and distribution polymorphism** and **server-anchored integrity**, not via long-lived client keys.
-
-### 6.11.4 Exposure & Bootstrap Considerations
-
--   If bootstrap/manifest is observed: it is **meant to be consumable** by that session and doesn’t expose server secrets.
--   Rule families rotate (per session/time-bucket), so reverse-engineered decoders **expire quickly** and don’t generalize.
-
-### 6.11.5 Position vs. Cryptographic Systems
-
-| Dimension          | AES/TLS/JWT (classic)             | FISE (this work)                              |
-| ------------------ | --------------------------------- | --------------------------------------------- |
-| Client-side keys   | Often present (must be protected) | **None** (no reusable decrypt key on client)  |
-| Server secret      | Yes (KMS/HSM, etc.)               | **Yes** (HMAC/manifest integrity only)        |
-| Protection horizon | Long-lived while secrets hold     | **Rotation window** (tens of seconds/minutes) |
-| Break reuse        | Often reusable once broken        | **Non-transferable; expires with rotation**   |
-| Security basis     | Math hardness + secrecy           | **Time & maintenance asymmetry + integrity**  |
-| Role               | Transport/auth/strong secrecy     | **Semantic protection; defense-in-depth**     |
-
-**Scope.** FISE complements TLS/JWT/DPoP/DRM. It is not a replacement for cryptographic secrecy where that is required.
-
-### 6.11.6 Measurement Plan
-
-Publish and track:
-
--   \(T_i/T_r\) ratio (observed),
--   Decoder breakage rate after rotation,
--   Scraper throughput reduction,
--   P95/P99 client overhead under legitimate use.
-
-_Note:_ Report concrete numbers in `docs/PERFORMANCE.md` after A/B experiments.
-
-### 6.12 Bidirectional (Two‑Way) Semantic Envelope
-
-**Goal.** Use the same per‑session rule family to protect **both directions**: server → client (response) **and** client → server (request), while keeping the hot path lightweight and parallelizable.
-
-**What it is.** A **two‑way semantic envelope**: the server injects a signed manifest at bootstrap; responses are wrapped (encode) and requests may optionally be wrapped (encode) by the client and **unwrapped** (decode) by the other side. The rule is **keyless** and rotates per session / time bucket; integrity of envelopes is enforced by a **server‑only HMAC** over metadata/bindings (not by a client secret).
-
-**Security properties (adjunct).**
-
--   **Confidentiality (semantic)**: hides _meaning_ from naive scraping or middleboxes; not a replacement for TLS.
--   **Context binding**: envelopes are valid only under `(method|pathHash|sessionIdHash|tsBucket[|tokenHash(trunc)])`.
--   **Asymmetry**: attacker time‑to‑understand >> defender time‑to‑rotate.
--   **No client secret**: avoids key exposure in the browser; HMAC secrets live only on the server.
-
-**Performance envelope.**
-
--   Linear byte ops (O(n)), block‑local chunks, parallel decode via Workers/JSI/WASM.
--   Deterministic rule selection from `(seed, chunkIndex[, tsBucket])` within a **small warmed pool (3–8)**.
-
-**Recommended usage.**
-
--   **Responses (default)**: wrap JSON/media segments.
--   **Requests (optional)**: wrap **non‑secret** payloads (e.g., proprietary query/filters) to raise scraping cost; keep auth/CSRF unchanged.
-
----
-## 6.13 Lazy / Just-In-Time Decrypt (Behavior-Bound)
-
-**Idea.** Decrypt only when a UI element actually needs data, at the smallest useful granularity (field/segment). This eliminates a single, predictable “global decrypt” point and minimizes plaintext lifetime.
-
-### 6.13.1 Properties
-- **Behavior-bound.** Decode is triggered by real user behavior (open modal, hover/scroll, route enter, component mount).
-- **Non-aggregatable.** **Decode → render → drop**; avoid assembling full JSON; no long-lived plaintext state.
-- **Timing obfuscation.** Add small jitter and vary decode loci (main thread vs. Web Worker/JSI/WASM) so hooks are non-deterministic.
-- **Parallel-friendly.** Per-chunk decode in Workers; stream and render incrementally.
-
-### 6.13.2 Hardening Tips
-- Off-main-thread decode (Workers/JSI/WASM); use transferable buffers and zero-copy where possible.
-- Zeroize buffers immediately after render; avoid DOM text nodes/logs; do not memoize plaintext.
-- Bind envelopes to `(method|pathHash|sessionIdHash|tsBucket[|tokenHash(trunc)])`; optionally verify a **server-side HMAC** for integrity/non-transferability.
-- Add rate limits and rotate per session/time bucket to cap an attacker’s sample budget.
-
-### 6.13.3 Limit
-A fully compromised client can still snapshot plaintext **at the exact render moment**. FISE’s contribution is to ensure any observed data is **fragmented, short-lived, and non-reusable**.
-
-### 6.13.4 Suggested KPIs
-- Plaintext lifetime per component (median/P95).
-- TTFR / latency overhead for legitimate users (P95/P99).
-- Decoder Breakage Rate (DBR) after rotation.
-- Scraper Throughput Reduction (STR) vs. baseline.
-
----
-
-## 7. Comparison
-
-| Feature                         | AES/WebCrypto    | Obfuscation libs (generic) | **FISE (this work)**                    |
-| ------------------------------- | ---------------- | -------------------------- | --------------------------------------- |
-| Requires client key             | **Yes**          | No                         | **No**                                  |
-| Universal decoder               | N/A (standard)   | Often                      | **No protocol-level universal decoder** |
-| Performance (client)            | Medium–High cost | Fast                       | **Very fast (microseconds)**            |
-| Predictability                  | Fixed format     | Medium                     | **Non-fixed, rotating**                 |
-| Semantic protection             | Not the goal     | Partial                    | **Strong focus**                        |
-| Per-app uniqueness              | No               | Limited                    | **Yes**; per-session/request capable    |
-| Server validation (anti-replay) | Optional (MAC)   | Rare                       | **First-class option (HMAC)**           |
-
----
-
-## 8. Performance
-
-### 8.1 Microbenchmarks (illustrative)
-
--   **Encode**: ~0.02–0.04 ms
--   **Decode**: ~0.01–0.02 ms
--   Optional AES/WASM stage: add 0.1–0.3 ms typical
-
-### 8.2 Methodology (to report in evaluations)
-
--   Payload sizes: 1 KB, 10 KB, 50 KB.
--   Environments: Desktop (M-series), Android mid-range, iOS mid-range.
--   Report **mean, stdev, P95/P99**.
--   Measure **end-to-end** impact (server encode → client decode → render).
-
-### 8.3 Parallel & Streaming Benchmarks
-
-Report **TTFR** (time-to-first-render) and **throughput** with N workers (server Node workers; client Web Workers/WASM). Typical chunk sizes: **8–32 KB** for JSON; **128–512 KB** for media segments. Compare streaming vs. non-streaming P95/P99.
-
----
-
-## 9. Deployment Guidance
-
-### 9.1 Minimal (Lean) Profile
-
--   Server: encode + HMAC verify endpoints.
--   Client: JS/RN decode runtime.
--   Rotation: 2–4 rule sets, per-session selector.
--   Bindings: method/pathHash/queryHash + sessionIdHash + time bucket.
--   Bot controls: rate limits, light CAPTCHA/Turnstile where appropriate.
-
-### 9.2 Normalization & CDN
-
--   Validate channels across gzip/brotli, Unicode NFC/NFKC, proxies/CDN.
--   Provide fallback multi-channel metadata if a lane is stripped.
-
-### 9.3 Observability
-
--   Log P50/P95 encode/decode, failure reasons, suspected tamper, rotation distribution.
--   A/B toggles to quantify real-world scraping reduction.
-
-### 9.4 When to Use Framed Mode
-
--   Enable for payloads **≥ 100–200 KB** or when using optional WASM/cipher stages.
--   Keep rules **block-local** (or carry **tiny state**) to preserve parallel decode.
--   Validate against **Normalization Gauntlet** (gzip/brotli, Unicode NFC/NFKC, CDN).
-
-### 9.5 Media‑Specific Guidance
-
--   **Video (HLS/DASH/CMAF)**: wrap **segments**, not manifests. Bindings include variant id and time buckets. Client unwraps in workers then appends raw bytes to MSE.
--   **Images**: whole‑file wrap (Blob URL) or **tile‑based** wrap for deep‑zoom; avoid CDN recompression on enveloped assets.
--   **CDN/Optimizer**: disable transforms (recompress/minify) on enveloped media; validate via Gauntlet.
--   **Chunk sizes**: 128–512 KB per segment chunk on web; schedule workers to group identical `rule_idx` for cache locality.
-
-### 9.6 Bootstrap Patterns (Web & RN)
-
--   **Web (SSR/SPA)**: render a per‑session **bootstrap** with CSP nonce; load `fise-runtime.min.js` (immutable). Verify signature, then initialize workers and start framed decoding.
--   **React Native**: fetch `GET /fise/rule?sid=...` for the manifest; verify signature; pass to native/JSI runtime.
--   **CDN**: do **not** cache the bootstrap; cache the runtime and enveloped payloads normally.
-
----
-
-## 10. Use Cases
-
--   Web/API response protection where **data is the product**: POI/travel, pricing, recommendations, AI metadata.
--   Admin dashboards/mobile apps exposing sensitive analytics (non-secret).
--   Aggregation portals (news/content) reducing bulk harvesting.
--   Media delivery: **per‑segment video** (HLS/DASH/CMAF) and **image tiles/files** wrapped in FISE for anti‑bulk scraping while preserving player/decoder compatibility.
-
-**Not recommended** for secrets/PII/keys—use standard cryptography and access control.
-
----
-
-## 11. Evaluation & KPIs
-
--   **Scraping reduction** (A/B): drop in effective scraper throughput (target ≥ 50–70%).
--   **Time-to-decoder** for red-team per rule set (target ≥ 5× vs. baseline).
--   Decoder breakage rate under **rotation** (maintenance cost for attacker).
--   Client overhead P95 < 1 ms on mid-range devices for ≤10 KB payloads.
-
----
-
-## 12. Future Work
-
--   Multi-block interleaving & decoy noise segments.
--   Per-request **rule set rotation** with server seed.
--   Browser-optimized **WASM fast path**.
--   DSL & **codegen** for polymorphic-by-build pipelines.
--   Watermarking/attribution bits for leak tracing.
--   Tamper detectors and heuristic anti-hook signals.
-
----
-
-## 13. Conclusion
-
-FISE reframes client-side protection as a **semantic, rule-based envelope**: keyless, rotating, and cheap to run. It **does not prevent** post-decode access, but it **raises attacker cost** substantially by eliminating a protocol-level universal decoder and coupling data to diversified, validated rule sets. Used alongside TLS/AuthZ, rate-limits, and behavior defenses, FISE provides **practical defense-in-depth** for teams—especially small teams—whose competitive edge lies in the data they deliver to clients.
-
----
-
-## 14. FISE Ecosystem: DSL, Rule VM, Registry & Builder
-
-This section defines a path to unlock **community-driven rule diversity** and safe, deterministic execution.
-
-### 14.1 Goals
-
--   **Rule Diversity at Scale**: countless pipelines from community & vendors without breaking safety or DX.
--   **Deterministic Runtime**: same input + same bindings → same output; budgeted CPU/memory/time.
--   **Programmability**: a **DSL** that compiles to **JS/WASM** for speed and polymorphic-by-build distribution.
--   **Trust & Quality**: **Registry** with CI, property tests, normalization gauntlet, and reputation scoring.
--   **No Secrets in Client**: binding and rotation **do not expose** server keys; HMAC verification remains server-only.
-
-### 14.2 FISE DSL — v0.1 (Minimum Spec)
-
--   Declarative operators; no arbitrary IO/network/DOM access.
--   Deterministic evaluation; pseudo-randomness only via allowed bindings/seed.
--   Budgeted execution: `max_ops`, `max_ms`, `max_bytes`.
--   Symmetry: every encode op has a decode inverse.
-
-### 14.3 Rule VM (Sandbox Runtime)
-
--   Isolation: no DOM, no network/FS; limited memory; timeouts; op-count quotas.
--   Determinism: frozen builtins; seeded PRNG derived from bindings/seed only.
--   Backends: JS interpreter first; optional **WASM** fast path.
--   Instrumentation: metrics (ops, ms, bytes), decode failures, normalization outcomes.
-
-### 14.4 Registry (Open, with CI)
-
--   Metadata: name, author, semver, ops used, budget, **Gauntlet score**, P95 decode, payload delta.
--   CI: linter, schema validate, property tests, fuzz, budget/time.
--   Signatures: rule packages signed (supply-chain).
--   Reputation: anonymized usage telemetry (opt‑in), field failure rates, attacker breakage reports.
--   Tags: `mobile-fast`, `normalization-hard`, `emoji-free`, `zero-width-lite`, `wasm-fast`, `framed`.
-
-### 14.5 Normalization Gauntlet
-
--   Compression: gzip/brotli; Unicode: NFC/NFKC; Proxy/CDN quirks.
--   Score: survival metrics + integrity; published in Registry.
-
-### 14.6 Rule Builder (UI + AI)
-
--   Block editor; live preview; budget sliders; Gauntlet-in-the-loop.
--   AI copilot for mutation (“+10% gauntlet score, P95 < 1 ms”).
--   **Bootstrap generator**: export per‑session rule manifest (bytecode + signature fields).
-
-### 14.7 Distribution & Rotation
-
--   Polymorphic-by-build codegen variants; per-session/per-request rotation.
--   Fallback: multi-channel metadata; decode can attempt multiple lanes.
-
-### 14.8 Governance
-
--   Claims policy; disclosure of limits (AitB).
--   Reviewer roles (security/perf).
--   Bounties/hall‑of‑fame.
-
-### 14.9 Roadmap (Ecosystem)
-
--   v0.2: JS VM + Registry alpha; Gauntlet CLI; 10 curated rules.
--   v0.3: WASM fast path; AI mutation loop; telemetry-backed fitness.
--   v1.0: Rule Builder stable; signed packages; enterprise rotation policies.
-
----
-
-## 15. FISE‑Media Profile (images & video)
-
-**Goal:** container/codec‑preserving envelopes with **parallel, chunked unwrap** on the client.
-
-### 15.1 Segment‑Envelope (recommended)
-
--   **Video**: apply FISE per **segment** (`.ts`, `.mp4`, CMAF). Super‑header announces `version`, `nChunks`, `rule_map`. Each chunk carries `rule_idx`, `chunkIndex`, `len`, bindings, and **HMAC (server-only key)**.
--   **Client flow**: `fetch(segment) → WebWorker.decodeFise(chunked) → appendBuffer(bytes)` (MSE). Start render as soon as first chunk is decoded.
--   **Images**: wrap **entire file**; decode to `Blob` then `img.src=URL.createObjectURL(blob)`. For deep‑zoom, wrap **per‑tile** for higher parallelism and per‑tile rotation.
-
-### 15.2 Heterogeneous per‑chunk rules
-
--   Deterministic selection from seed/bindings; keep pool small (3–8). Optimize scheduler to batch by `rule_idx` to reduce JIT/WASM thrash.
-
-### 15.3 Integrity & Anti‑replay
-
--   Include `(rule_idx || chunkIndex || len || bindings)` in **HMAC** (server key only). Bindings cover `method|path|variant|tsBucket`.
--   Optional decoy/padding and variable chunk sizes to hide internal boundaries.
-
-### 15.4 Compatibility & Gauntlet
-
--   Validate against gzip/brotli, Unicode normalization, proxy/CDN mutations, and platform image/video pipelines.
--   Disallow CDN recompression on enveloped assets; publish Gauntlet score in Registry metadata.
-
-### 15.5 Metrics
-
--   **TTFR** improvement vs. baseline, **throughput** with N workers, **P95/P99** decode, **decoder breakage rate** under rotation.
-
-### 15.6 Critical‑Fragment Obfuscation (Selective Partial Protection)
-
-**Idea:** obfuscate a **very small portion** (≈0.5–3% bytes) that is **structurally critical** to decoding/visual quality, then restore it client‑side in the framed pipeline. This preserves **throughput** and **parallelism** while making CDN-level restreaming **very hard and economically unattractive** without the rule.
-
-**Video (MP4/CMAF/HLS/DASH):**
-
--   **Init segment**: lightly obfuscate parts of **parameter sets** (e.g., SPS/PPS for AVC/HEVC, sequence headers/OBUs for AV1).
--   **Key frames (IDR)**: obfuscate a few **tiles/macroblocks** at the start of each IDR or selected **slice header** fields.
--   **Sample description / `stsd`**: minimal perturbation that invalidates naive decoders until client restores.
-
-**Images (JPEG/WebP/AVIF):**
-
--   **JPEG**: obfuscate a handful of **MCU** at scan start, or perturb **Huffman/Quant tables** with a deterministic, invertible delta.
--   **WebP/AVIF**: target a small set of **OBU/Chunk headers** or the first **tile** in each region.
-
-**Client restoration:** performed **per‑chunk** in Web Workers/JSI/WASM (block‑local), then fed to MSE (video) or `Blob URL` (image).
-
-**When to use:** environments you control end‑to‑end (no CDN recompression) or alongside **15.1 Segment‑Envelope** as an inner layer for high‑value routes.
-
-**Caveats:** ensure compatibility with players; validate via **Normalization Gauntlet** and device lab before rollout.
-
-### 15.7 Live Event Anti‑Restream Profile (optional)
-
-**Goal:** make near‑realtime restreaming economically unviable by coupling **time‑bucket rotation** with **heterogeneous per‑chunk rules** and (optionally) **critical‑fragment obfuscation**.
-
-**Profile:**
-
-1. **Per‑session bootstrap** (signed, no‑store).
-2. **Per‑segment envelope** (2–4 s segments) with `super‑header`, `rule_map`, and **HMAC(meta || chunkIndex || bindings)**.
-3. **Heterogeneous‑by‑chunk**: pool of 3–8 rules, selection deterministic from `(seed, chunkIndex, tsBucket)`.
-4. **Rotation by time‑bucket** (e.g., every 15–30 s).
-5. **Optional critical fragments**: touch init + IDR boundaries (≤3% bytes) to break naive playback.
-6. **Bindings**: include `(method|pathHash|variant|sessionIdHash|tsBucket)` in meta/HMAC.
-7. **Watermark (optional)**: per‑session tracers in metadata/offset layout for leak attribution.
-
-**Outcome:** legitimate clients decode **in parallel** with low **TTFR**, while attackers accumulate **latency debt** (find bootstrap → build N decoders → track rotations), causing restreams to lag or fail.
-
----
-
-## 16. Temporal Polymorphism & Rule Injection Diversity
-
-Modern large‑scale scrapers rely on two assumptions: (1) the protection mechanism is **stable over time**, and (2) it is **uniform across clients**. FISE invalidates both by introducing **temporal polymorphism** and **distribution‑level variability**: the effective rule‑set for each client (and potentially each request) is **inlined at bootstrap time** and can be **mutated/rotated** with negligible operational cost. This unpredictability raises both **attack construction** and **attack maintenance** costs.
-
-### 16.1 Client‑Side Rule Injection (Per‑Client Distribution)
-
-On each initial HTML load, the app may embed the **effective decode rule‑set** for that session. The rule need not be static, global, or shared.
-
-**Injection vectors (non‑exhaustive):**
-
--   Inline `<script type="module">` with CSP nonce (short‑lived)
--   External bundles (per‑build polymorphism)
--   Dynamic `import()` loaders
--   Service Worker bootstrap responses
--   Inlined bootstrap JSON (`window.__FISE__`)
--   CSS‑encoded lanes (zero‑width / emoji / base62)
--   WASM modules with partial decode logic
--   `<meta>`‑embedded metadata
--   `Link: rel=prefetch` headers
--   First‑call bootstrap API responses
-
-Apps may **select/rotate injection paths** at runtime. Thus, even within the same rule set family, each client can receive a **structurally different** decode pipeline.
-
-**Implication.** There is no single reliable “place” to locate the decoder; reverse‑engineering must begin **from scratch** for each injection variant.
-
-### 16.2 Distribution Polymorphism (Diversity Across Clients)
-
-Since rules are injected at bootstrap, delivery can vary **per‑build**, **per‑client**, **per‑session**, and even **per‑request** (for sensitive endpoints). The rule itself may be:
-
--   injected as a concrete pipeline,
--   generated via DSL at build‑time,
--   mutated by polymorphic codegen, or
--   selected from a pool of community salt packs.
-
-This yields a many‑to‑many mapping:
-
-```
-Client 1 → A₁
-Client 2 → A₂
-Client 3 → B₁
-Client 4 → C₃
-...
+FISE changes the application-layer representation exchanged by a producer and
+an authorized client. Version 1.1 combines explicit wire framing, one atomic
+compatibility profile, a reversible transform, public random salt, configurable
+marker placement, canonical profile artifacts, deterministic vectors, rollout
+diffs, binary HTTP helpers, and an optional WebAssembly byte backend.
+
+FISE is designed to create representation diversity and a maintainable
+adaptation step for integrations that otherwise consume stable plaintext
+payloads. Whether that step creates useful adaptation cost is an empirical
+hypothesis, not a cryptographic work factor and not yet a demonstrated general
+result. The current evidence establishes deterministic behavior, bounded
+parsing, scoped runtime performance, JavaScript/WASM parity, and independent
+Python interoperability for the manifest-compiled binary subset.
+
+The paper also identifies parallel transform, partial/range restoration, and
+lazy/progressive restoration as prominent architectural opportunities. They
+are explicitly classified as proposed extensions rather than implemented 1.1
+features.
+
+The built-in repeating-XOR transforms carry their salt in the envelope and
+provide neither cryptographic confidentiality nor authenticity. FISE assumes
+that an authorized or attacker-controlled client can inspect the decoder and
+recover plaintext. TLS, authorization, quotas, and standard authenticated
+encryption remain necessary wherever their properties are required.
+
+## 1. Introduction and use case
+
+Many first-party browser applications receive stable JSON or byte layouts from
+an endpoint. Legitimate clients benefit from that stability, but integrations
+built outside the producer's intended contract can also depend directly on the
+same representation. FISE gives the application owner an explicit, versioned
+way to replace that representation without pretending that client-visible data
+can be kept secret from the client.
+
+Consider a catalog service and a browser application controlled by one release
+owner. Instead of exposing plaintext JSON directly, the service sends a binary
+FISE envelope under a versioned media contract. The browser validates one
+expected profile, restores UTF-8/JSON, and then applies its ordinary application
+schema. A later profile change is reviewed as an atomic compatibility change
+and deployed on a parallel endpoint or together with its consumer.
+
+FISE is useful only when:
+
+1. the receiving client is authorized to recover the payload;
+2. changing the representation has product value;
+3. producer/consumer coupling and resource overhead are acceptable; and
+4. normal transport, identity, authorization, and abuse controls remain in
+   place.
+
+It is not a suitable boundary for private keys, credentials, payment secrets,
+authorization decisions, or regulated-data confidentiality.
+
+The engineering contributions of version 1.1 are the composition of:
+
+- a versioned reversible envelope with deterministic, exact framing;
+- atomic profile ownership across transform, layout, context, limits, and ID;
+- canonical manifest compilation with content-derived identity;
+- deterministic conformance and first-class rotation artifacts;
+- no implicit profile, context, version, or legacy fallback; and
+- one implementation surface spanning strings, bytes, HTTP, JavaScript, WASM,
+  and a scoped independent Python binary reference.
+
+These are protocol- and lifecycle-engineering contributions. XOR, random salt,
+headers, markers, manifests, digests, and WASM loops are not claimed as new
+algorithms.
+
+The binary design also creates a deliberate execution-model extension path.
+For the built-in byte transform, each transformed byte depends only on the byte
+at the same absolute position and the corresponding repeating-salt byte. That
+position-separable property makes parallel backends plausible. Partial and lazy
+restoration are related but stronger ideas: partial restoration requires an
+offset-aware capability contract, while lazy restoration requires a framed or
+indexed wire contract. Section 7.3 distinguishes these proposed capabilities
+from the implemented 1.1 surface.
+
+## 2. Claims, terminology, and threat model
+
+### 2.1 Claim classes
+
+This paper uses four claim classes:
+
+- **Implemented**: present in the current source and automated tests.
+- **Verified**: executed in a named environment for one exact revision or
+  artifact.
+- **Hypothesis**: a measurable product effect for which current instrumentation
+  exists but controlled outcome evidence does not.
+- **Proposed**: future research with no current wire or API promise.
+
+Revision-specific verification belongs in
+[RELEASE_EVIDENCE.md](./RELEASE_EVIDENCE.md), not in the stable narrative of
+this paper.
+
+### 2.2 Name and operational verbs
+
+FISE expands to **Fast Interoperable Structured Envelope**. “Structured” names
+the explicit frame and profile contract without implying cryptographic safety.
+
+The public functions retain `encrypt` and `decrypt` as operational verbs:
+
+- **encrypt** transforms a payload and creates a reversible FISE envelope;
+- **decrypt** validates and reverses that envelope; and
+- **transform** is the selected reversible operation, whose properties must be
+  assessed independently.
+
+The built-in profiles do not provide cryptographic confidentiality,
+authenticity, or integrity. That warning is part of the public API documentation
+as well as this paper because a consumer may see autocomplete without reading
+the threat model.
+
+Other terms:
+
+- **profile**: one public compatibility identity plus representation,
+  transform, layout, context schema, and resource limit;
+- **marker**: a fixed-width profile-consistency value recomputed from declared
+  layout inputs and context;
+- **salt**: a varying public transform parameter carried at the envelope tail;
+  and
+- **rotation**: an atomic producer/consumer move to a different profile ID.
+
+### 2.3 Attacker capabilities and intended effect
+
+A realistic client-side attacker may:
+
+- obtain valid responses through an authorized or compromised account;
+- download shipped JavaScript, profile artifacts, and WASM;
+- inspect headers, salts, algorithms, and context derivation;
+- hook functions before encryption or after decryption;
+- inspect WASM inputs, outputs, and linear memory;
+- automate the official browser rather than reimplement the protocol; and
+- reproduce or modify public transform/profile behavior.
+
+FISE can break direct compatibility with tooling that expects the original
+plaintext layout. A deployed profile change can create a maintenance event for
+an independently implemented decoder. That effect must be measured as
+engineering time, throughput, correctness, maintenance, and legitimate-client
+cost—not as bits of security. If automation hooks the official decoder, profile
+diversity may add little cost.
+
+FISE 1.1 does not promise secrecy, authenticated integrity, origin proof,
+authorization, replay prevention, freshness, DRM, anti-debugging, or a trusted
+browser/WASM enclave.
+
+## 3. Design principles and architecture
+
+Version 1.1 is a clean break from earlier designs that exposed separable rules
+and transforms, inferred salt length through custom inverses, and accepted
+magic-less legacy input. It establishes five boundaries:
+
+1. one atomic profile owns all decode-relevant behavior;
+2. one explicit versioned header owns framing and lengths;
+3. one tail location owns salt extraction;
+4. one recomputed marker replaces inverse marker decoding; and
+5. one canonical manifest/artifact path owns reproducible profile rotation.
+
+```mermaid
+flowchart LR
+    P[Application payload] --> E[FISE encode]
+    R[One atomic profile] --> E
+    C[Validated external context] --> E
+    E --> W[Versioned envelope]
+    W --> D[FISE decode]
+    R --> D
+    C --> D
+    D --> V[Application schema validation]
 ```
 
-Even within the same family (A, B, C), **materialization differs** per client.
+No compatibility overload or legacy decoder is retained. Upgrade cost is paid
+at a declared deployment boundary instead of becoming permanent parser state.
+Parsing is fail-closed: the decoder receives one expected profile and never
+searches a candidate range, guesses context, or tries an older format.
 
-**Implication.** Attackers cannot prepare a universal, reusable decoder. At best they reverse one session, which becomes invalid after rotation.
+## 4. Wire protocol
 
-### 16.3 Temporal Rule Rotation (Maintenance Asymmetry)
+Both string and binary representations follow the same logical frame:
 
-Breaking a pipeline requires:
-
-1. locating the injected rule, 2) understanding the pipeline, 3) reconstructing a decoder, 4) validating, 5) automating. This can take hours per pipeline.
-
-Defenders can rotate **per deployment / per session / per time bucket / per request** with near‑zero cost.
-
-**Asymmetry.**
-
-```
-Attacker time‑to‑understand  >>  Defender time‑to‑rotate
+```text
+┌────────────── H: header ──────────────┐┌──── transformed payload ────┐┌─ salt ─┐
+FISE | 1.1 | profile ID | L | N          X[0:p] | M | X[p:N]             S (L units)
+                                             └ marker at profile offset p
 ```
 
-Thus, even successful decoding is **short‑lived** and **non‑transferable**.
+Equivalently:
 
-> **Claim wording:** FISE does **not** prevent decoding; it aims to ensure any successful decoding is **short‑lived and non‑reusable**.
+```text
+E = H || X[0:p] || M || X[p:N] || S
+length(E) = headerLength + N + markerSize + L
+```
 
-### 16.4 Zero‑Reuse Reverse Engineering
+`H` carries magic, exact wire version 1.1, profile ID, salt length `L`, and
+transformed length `N`. `M` is a fixed-width marker at profile-selected position
+`p`. `S` is always the final `L` units. The string fixed header is 22 ASCII code
+units; the binary fixed header is 13 bytes. Both are followed by an ASCII
+profile ID of at most 63 characters.
 
-Traditional anti‑scrape fails because one break scales: same signatures, payload formats, and schemas. FISE breaks that model:
+The decoder:
 
--   Decoding logic is **session‑local**.
--   Pipeline structure is **instance‑specific**.
--   Injection vectors are **variable**.
--   Offsets/metadata lanes can differ **per request**.
--   Each instance **decays quickly** under rotation.
+1. validates one profile/context snapshot and the stricter envelope limit;
+2. requires magic and exact version 1.1;
+3. parses and matches the expected profile ID;
+4. checks salt range and one exact total-length equation;
+5. computes marker position from declared lengths and context;
+6. recomputes and compares the marker;
+7. takes the declared tail salt, reconstructs transformed data, and runs the
+   profile-owned reverse transform; and
+8. validates the transform output representation.
 
-**Result.** Reverse‑engineering may be feasible but **economically useless** beyond the original session.
+Unknown versions, old magic-less input, truncation, trailing data, wrong
+profiles, and marker mismatches fail with typed error codes.
 
-**Principle:** _No protocol‑level universal decoder, no reusable exploit._
+### 4.1 Marker failure model
 
-### 16.5 Security Implications
+The marker is a bounded consistency signal, not a checksum, MAC, or
+authentication tag:
 
-Temporal & distribution polymorphism increase:
+| Condition | Primary detection | What the marker adds |
+| --- | --- | --- |
+| Wrong version or profile ID | Header | Nothing |
+| Truncation or trailing data | Exact length | Nothing |
+| Wrong context/layout under the same ID | Recomputed value/location | Partial detection; mappings and observed bytes can collide |
+| Same-length payload or salt mutation | External integrity/schema control | Not generally detected |
+| Deliberate rewrite with the public profile | MAC/AEAD/signature outside FISE | Not prevented |
 
--   attacker cost (initial & ongoing),
--   attacker uncertainty,
--   scraping maintenance overhead,
--   difficulty of automation,
--   resistance to pattern matching (including AI‑assisted).
+There is no profile-independent false-acceptance probability. A wrong position
+reads application-dependent transformed bytes, not necessarily uniformly random
+values. Marker width therefore trades framing overhead and representational
+capacity against deployment-specific accidental-match behavior; it must not be
+reported as security bits.
 
-…while maintaining:
+### 4.2 Default transforms
 
--   microsecond‑level overhead,
--   no client‑side secrets,
--   straightforward integration for small/medium teams.
+The default string transform XORs JavaScript UTF-16 code units with a repeating
+salt, serializes each result as two big-endian bytes, and emits canonical
+base64. It preserves lone surrogate code units. An implementation in another
+language must model 16-bit code units rather than Unicode scalar values; the
+binary/UTF-8 path is the preferred cross-language surface.
 
-We call this **Semantic Protection with Temporal & Distribution Polymorphism (SP‑TDP)**—a defense model where attack cost scales roughly **per client / per session**, while defense cost remains **near‑constant**.
+The default binary transform repeats XOR directly over `Uint8Array`. It avoids
+base64 and can use either the reference JavaScript loop or its byte-compatible
+WASM backend.
 
----
+Salt selection and content use `globalThis.crypto.getRandomValues`, including
+rejection sampling for inclusive ranges and the string alphabet. Salt remains
+public and does not turn repeating XOR into cryptography.
 
-## 17. Portability & Platform Profiles
+The normative grammar is in [SPEC.md](./SPEC.md).
 
-FISE’s core is dependency‑free, linear byte/string transforms with optional WASM fast paths. This makes it portable across Web, Mobile, TV/IoT, Edge, and Native stacks. Below are **reference profiles** and packaging targets.
+## 5. Atomic profile model
 
-### 17.1 API Surface (minimal)
+```text
+FiseProfile
+├── public ID and optional manifest digest
+├── representation: string | binary
+├── transform: stable semantic ID + forward/reverse implementation
+├── layout: salt range + marker size + marker + offset
+├── external-context contract: timestamp + typed metadata
+└── resource limit: maximum envelope length
+```
 
--   `encode(input: Uint8Array, manifest: Manifest): Uint8Array`
--   `decode(input: Uint8Array, manifest: Manifest): Uint8Array`
--   `encodeFramed(stream, manifest): AsyncIterable<Chunk>`
--   `decodeFramed(stream, manifest, { maxWorkers? }): AsyncIterable<Uint8Array>`
+Encryption and decryption accept the profile directly. An operation cannot
+substitute an unrelated transform. Definition helpers validate and freeze owned
+copies; every operation consumes one immutable profile/context snapshot.
 
-**Manifest (self‑contained).** `rulesetId`, `rule_map`, `seedHint`, `bindings`, `sig`, `version`.
+The shared runtime interface contains two materially different profile classes:
 
-### 17.2 Web (Browser)
+| Class | Source of behavior | Identity | Interoperability claim |
+| --- | --- | --- | --- |
+| Manifest-compiled profile | Declarative `fise.profile/1` schema | Canonical SHA-256 content identity | Portable across implementations of that declared subset |
+| Application-defined runtime profile | Trusted callbacks | Developer-assigned ID | Local contract; portability is not implied |
 
--   **Profiles:** `web-core` (JS), `web-wasm` (auto WASM), `media-segment-envelope`, `media-critical-fragment` (opt‑in).
--   **Parallelism:** Web Workers; transferable buffers.
--   **Media:** MSE append after unwrap; Image via Blob URL.
--   **Notes:** CSP nonce on bootstrap; Gauntlet (gzip/brotli/NFC/NFKC/CDN).
+These are documentation classes, not extra TypeScript types. Finite vectors can
+detect drift in callbacks but cannot prove arbitrary callback equivalence.
+Handwritten IDs rely on developer discipline.
 
-### 17.3 Mobile (React Native)
+Backend substitution is narrower than profile substitution.
+`withBinaryBackend` requires the same transform ID and runs deterministic
+semantic, round-trip, output-ownership, and mutation checks. Built-in transform
+IDs accept only implementations registered by FISE. The JavaScript and WASM
+byte loops both implement `fise.xor.u8.v1`; changing the backend does not change
+the envelope profile.
 
--   **Profile:** `rn-jsi` (C++/Rust core via JSI) + JS shim.
--   **Parallelism:** thread pool inside JSI; avoid GC churn; preallocate buffers.
--   **Media:** decode per‑chunk then pass to native players or custom renderers.
+## 6. Profile compiler and lifecycle
 
-### 17.4 TV & IoT
+The `fise.profile/1` compiler covers built-in transforms, fixed-width base-N or
+unsigned markers, affine offsets, typed context, and resource limits. It:
 
--   **Webview targets (Tizen/webOS/Android TV/kiosk):** prefer `media-segment-envelope`; Workers if available; WASM optional; fallback scalar.
--   **Native set‑top/embedded:** static lib (C/C++/Rust); expose `encode/decode/decodeFramed`; 2–4 worker threads are sufficient for 2–4s segments.
--   **Metadata lanes:** prefer hex/base36 over zero‑width/emoji on firmware that normalizes content.
+1. rejects unknown, inconsistent, or type-coerced fields;
+2. normalizes every default;
+3. canonicalizes the normalized manifest;
+4. hashes its UTF-8 bytes with SHA-256;
+5. derives an ID containing a 128-bit digest prefix;
+6. emits a deeply frozen artifact carrying the full digest; and
+7. validates transform/layout behavior and generates deterministic vectors.
 
-### 17.5 Edge Runtimes (Cloudflare/Deno/Bun/Vercel Edge)
+Normalized manifests contain only safe integers and schema-restricted ASCII
+strings/keys. Object keys are ordered, compiler-declared commutative terms are
+sorted, arrays otherwise retain order, JSON is emitted without insignificant
+whitespace using ECMAScript primitive serialization, and the resulting string
+is UTF-8 encoded before hashing. This restricted scheme is compatible with the
+JSON Canonicalization Scheme [6], while FISE's exported helper is not presented
+as a general-purpose JCS implementation outside the manifest schema.
 
--   **Profile:** ESM build, no Node APIs required; Worker pool polyfill for concurrency or single‑thread fallback.
--   **Streaming:** handle `ReadableStream` with framed decode for low latency.
+```mermaid
+flowchart LR
+    M[Profile manifest] --> N[Validate + normalize]
+    N --> H[Canonical JSON + SHA-256]
+    H --> A[Profile artifact + runtime profile + vector]
+    A --> D{Change needed?}
+    D -->|No| K[Keep profile ID]
+    D -->|Yes| M2[Compile next manifest]
+    M2 --> X[Rotation diff: paths + new ID]
+    X --> B[Atomic or parallel-surface rollout]
+```
 
-### 17.6 Native (iOS/Android/Desktop)
+Artifacts prove content equality, not author identity or approval. They are
+unsigned and require normal source control, release signing, and deployment
+authorization for provenance.
 
--   **iOS:** Swift Package + static C/C++/Rust core.
--   **Android:** AAR (Kotlin) with JNI to C/C++ core if needed.
--   **Desktop:** Rust/C++ lib, Node addons for Electron.
--   **Endianness:** operate on byte arrays (endian‑agnostic).
+## 7. Implementation and conformance
 
-### 17.7 Rule Budget & Compatibility
+### 7.1 Binary HTTP surface
 
--   **Budget:** ≤ 2k ops/KB; P95 JSON ≤10 KB < 1 ms on mid‑range mobile; minimal allocations.
--   **Forbidden in hot path:** PBKDF, SHA‑heavy, big‑int crypto.
--   **Gauntlet:** test against gzip/brotli, Unicode normalization, proxy/CDN rewrites, and media pipelines.
+`fise/http` serializes UTF-8 and JSON through the binary envelope. Writers emit:
 
-### 17.8 Packaging
+```text
+application/vnd.fise; version=1.1; profile="..."
+```
 
--   **Web/Node:** ESM + CJS with d.ts; optional WASM.
--   **RN:** JSI module; pods/gradle config.
--   **Edge:** ESM only.
--   **Native:** static libs + thin adapters.
+Readers require exact media type, version, and profile. With an active bound,
+they count Fetch-exposed body chunks and request cancellation on overflow.
+Identity `Content-Length` supplies an early bound and exact-length check. For a
+content-coded response, Fetch may expose decoded bytes while retaining the
+compressed representation length in headers; FISE therefore validates that
+header syntactically without comparing it to decoded envelope length.
 
-**Claim wording.** By keeping cores simple and dependency‑free, FISE can be implemented consistently across platforms while preserving performance (parallel, block‑local) and robustness (Gauntlet‑tested lanes).
+### 7.2 WebAssembly backend
+
+The optional embedded WASM module contains only a byte XOR loop. Compilation is
+cached, instances own isolated linear memory, results are copied out, and the
+used window is cleared best-effort. Memory grows in 64 KiB pages and retains its
+bounded high-water mark until the instance is discarded. The default cap is
+1,024 pages (64 MiB); parsing, randomness, profiles, input/output copies, and
+other allocations remain in TypeScript.
+
+WASM is a performance backend, not an enclave or anti-analysis boundary.
+
+### 7.3 Execution-model extension path
+
+The following properties are prominent architectural opportunities, not
+additional version 1.1 API guarantees:
+
+| Direction | Architectural basis | Contract still required | 1.1 status |
+| --- | --- | --- | --- |
+| Parallel encrypt/decrypt—more precisely, parallel binary transform | For `fise.xor.u8.v1`, byte `i` depends only on input byte `i` and salt byte `i mod saltLength` | Deterministic partitioning, worker/SIMD/thread ownership, transfer and cancellation rules, crossover measurements, and backend conformance | **Proposed**; current JS and WASM backends each execute one full-buffer loop |
+| Partial or range restoration | A position-separable transform can restore a slice when its absolute transform offset is known | A declared sliceability capability, offset-aware API, marker/range mapping, bounded range semantics, and profile-specific conformance | **Proposed**; the 1.1 API validates and reconstructs a complete envelope |
+| Lazy or progressive restoration | Independent frames or a validated index could make bounded units available incrementally | New wire negotiation, frame/index grammar, ordering, truncation, backpressure, failure, and application-decoding semantics | **Proposed** for a future wire version; concatenated 1.1 envelopes are not streaming |
+
+Parallel transform is the nearest extension because a conforming backend could
+preserve the existing logical transform ID and envelope bytes. It would not
+make parsing, marker validation, envelope assembly, or JSON decoding parallel
+by implication.
+
+Partial restoration is profile-specific rather than a universal FISE property.
+Arbitrary application-defined transforms may depend on the entire input and
+must not be treated as sliceable. Lazy JSON restoration is a still stronger
+contract: producing plaintext byte chunks does not by itself provide an
+incremental JSON value or define when application code may safely observe it.
+
+The promotion criteria are a versioned contract, bounded failure behavior,
+conformance vectors, target-runtime verification, and measured benefit. The
+concrete research sequence is maintained in [ROADMAP.md](./ROADMAP.md).
+
+### 7.4 Conformance evidence
+
+The TypeScript suite covers canonical vectors, version/profile/length/marker
+failures, context and resource limits, full-byte and arbitrary UTF-16 property
+sweeps, malformed fixed headers, strict manifest validation, artifacts,
+rotation, HTTP behavior, WASM boundaries, and JS/WASM parity.
+
+A standard-library-only Python implementation independently verifies a
+manifest-compiled binary artifact, reproduces its digest/profile ID, decodes a
+TypeScript-generated vector, and emits the same envelope bytes from its fixed
+conformance salt. This demonstrates cross-language interoperability for that
+declared subset only. It does not establish portability of handwritten
+callbacks or the JavaScript-specific string surface.
+
+See [CONFORMANCE.md](./CONFORMANCE.md) and the
+[Python reference](../reference/python/README.md).
+
+## 8. Evaluation
+
+### 8.1 Runtime and wire cost
+
+FISE separates raw transform cost, complete round-trip cost, and known-decoder
+JSON parsing. The benchmark commands emit machine-readable mean, median, P95,
+P99, standard deviation, throughput, warmup/iterations, and wire size.
+
+In one scoped Node `v22.14.0` macOS arm64 run, a 1 MiB full binary round trip
+measured 3.490 ms mean / 3.793 ms P95 in JavaScript and 1.378 ms mean / 1.449 ms
+P95 with WASM. These are local summary statistics, not a universal crossover or
+browser/device claim.
+
+Binary framing adds `13 + profileIdBytes + markerBytes + saltBytes`; the default
+profile therefore adds 44–133 bytes. The default string representation encodes
+two bytes per UTF-16 code unit as base64, approaching about 2.667x for large
+ASCII input before fixed framing and transport compression. String and binary
+wire costs must not be conflated.
+
+“Fast” means a design objective with linear transforms, bounded parser work, and
+scoped measurements. Browser main-thread, worker transfer/startup, allocation,
+GC, mobile/device, power, compression, and end-to-end application latency remain
+deployment measurements.
+
+See [PERFORMANCE.md](./PERFORMANCE.md).
+
+### 8.2 Adaptation hypothesis
+
+The bundled runtime benchmark compares plaintext JSON, base64 JSON, a minimal
+versioned binary JSON envelope, and FISE with already known profiles. It proves
+neither human reverse-engineering cost nor maintenance benefit.
+
+The controlled protocol separates initial integration, profile rotation, and
+official-client instrumentation. It includes the closest baseline—a versioned
+custom binary/media envelope—so the study can distinguish generic non-JSON cost
+from FISE's profile lifecycle. Until independent participants complete that
+study, adaptation cost remains a hypothesis. A null or small effect is a valid
+result and must narrow the product claim.
+
+See [ADAPTATION_EVALUATION.md](./ADAPTATION_EVALUATION.md).
+
+### 8.3 Name-to-evidence status
+
+| Name component | Version 1.1 evidence |
+| --- | --- |
+| **Fast** | Scoped Node latency/throughput and wire measurements; not universal device evidence |
+| **Interoperable** | Normative wire contract, vectors, JS/WASM parity, and independent Python compiled-binary evidence; not every profile/language |
+| **Structured** | Explicit version/profile/length framing, deterministic parsing, typed failures, and atomic profile lifecycle |
+
+## 9. Security analysis and limitations
+
+Version/profile headers prevent accidental decoder drift. Exact lengths remove
+heuristic scanning and parser ambiguity. Atomic profiles reduce configuration
+mix-and-match. Context schemas and resource bounds make failure explicit.
+Canonical artifacts improve rollout governance.
+
+None of those properties establish confidentiality or authenticity. An
+attacker controlling an authorized client can observe plaintext and reproduce
+public logic. A party that can rewrite an envelope and execute the profile can
+create another consistent envelope. The public marker does not cover every
+payload/salt byte. WASM memory is observable. Profile artifacts are unsigned.
+
+Deployments retain HTTPS, authentication, server-side authorization, quotas,
+rate limits, anomaly detection, cache policy, schema validation, revocation,
+and standard cryptography where keys can be protected. The complete boundary is
+in [SECURITY.md](./SECURITY.md).
+
+## 10. Related work and closest baseline
+
+JSON [1], CBOR [2], and Protocol Buffers [3] define textual or binary data
+representations with substantially broader multi-language ecosystems than
+FISE. CBOR includes deterministic-encoding guidance but does not create a FISE-
+style profile identity or rollout artifact by itself. Protocol Buffers owns
+schema evolution rules, including explicitly safe and unsafe changes, rather
+than FISE's arbitrary layout/context profile.
+
+HTTP already separates media type from content coding and supports media-type
+parameters and negotiation [4, 5]. FISE's media contract uses those mechanisms;
+it does not claim to invent them. JSON canonicalization work [6] supplies the
+closest standard foundation for reproducible manifest bytes.
+
+Moving-target defense changes or disrupts a system's attack surface [7], while
+software obfuscation transforms programs to raise analysis cost [9]. FISE is
+only adjacent to those areas: it rotates an application representation while
+shipping the authorized decoder, and it makes no general system-defense or code-
+secrecy claim. OWASP's automated-threat taxonomy [8] supplies problem vocabulary
+for scraping and other unwanted automation but does not make representation
+changes sufficient controls.
+
+Authenticated envelopes such as JWE use authenticated encryption for
+confidentiality and integrity [10]. White-box cryptography studies key-bearing
+cryptographic implementations in hostile execution environments [11]. FISE is
+not in either class because its built-in transform has no protected secret and
+its envelope has no authentication tag.
+
+| Category | Primary purpose | Evolution identity | Content-derived identity | Cryptographic secrecy/integrity | Current cross-language evidence |
+| --- | --- | --- | --- | --- | --- |
+| Plain JSON | Text data interchange | Application-owned | No | No | Broad |
+| Base64 wrapper | Binary-to-text representation | Application-owned | No | No | Broad |
+| CBOR | Compact binary data model | Tags/application profile | Not inherent | No | Broad |
+| Protocol Buffers | Schema-based serialization | Schema/field evolution | Not inherent | No | Broad |
+| HTTP media/content coding | Representation labeling/transformation | Media type, parameters, registries | No | No | Broad |
+| FISE 1.1 | Governed reversible application envelope | Atomic profile + wire version | Compiled profiles only | No built-in claim | TypeScript/WASM plus Python compiled-binary subset |
+
+The closest baseline is a custom media type plus versioned binary serialization
+and a canonical manifest. A disciplined application can reproduce many FISE
+properties from those components. FISE's narrower contribution is their
+integrated contract: one profile owns all decode behavior, declarative behavior
+is bound to content identity, parsing is exact and fail-closed, and vectors plus
+rotation diffs span the supported surfaces. Whether that integration produces
+meaningful adaptation benefit remains the open empirical question.
+
+This comparison establishes positioning, not an exhaustive systematic review
+or priority claim.
+
+## 11. Compatibility and deployment
+
+Version 1.1 removes all 0.x decoding. Producers and consumers upgrade together
+or use a new endpoint, API version, cache namespace, or media contract. Cached,
+queued, and durable envelopes must be invalidated or regenerated.
+
+The no-fallback model is best suited to first-party web deployments where one
+owner controls producer and client releases. Long-lived mobile clients, offline
+consumers, and third-party integrations require parallel versioned surfaces or
+may be a poor fit.
+
+```mermaid
+flowchart LR
+    A[Surface A<br/>producer A + profile A] --> CA[Consumer A]
+    B[Parallel surface B<br/>producer B + profile B] --> CB[Consumer B]
+    CB --> V[Validate and shift entry traffic]
+    V --> Q[Drain A caches, queues, durable values]
+    Q --> X[Retire surface A]
+```
+
+This is application-level blue-green orchestration. Each surface still selects
+one exact profile; no decoder tries A and then falls back to B.
+
+Recommended deployment sequence:
+
+1. classify data and confirm the client may recover it;
+2. compile and review one profile artifact and vector;
+3. set transport, profile, caller, and WASM limits;
+4. test the release artifact under target runtimes and production CSP;
+5. deploy atomically or behind a parallel versioned surface;
+6. validate restored application payloads; and
+7. monitor typed errors, latency, failure rate, and measured adaptation outcome.
+
+See [MIGRATION_V1_1.md](./MIGRATION_V1_1.md).
+
+## 12. Conclusion
+
+FISE 1.1 turns a loose reversible layout into an explicit protocol and profile
+lifecycle. Atomic ownership, exact headers, marker recomputation, bounded
+failure semantics, canonical artifacts, rotation diffs, binary HTTP helpers,
+JS/WASM parity, and a scoped independent Python reference improve correctness
+and operability.
+
+Its position-separable built-in binary transform also provides a credible path
+to parallel execution. Partial/range and lazy/progressive restoration remain
+explicit research directions requiring additional capability and wire
+contracts; they are not silently implied by the complete-buffer 1.1 API.
+
+Its strongest defensible claim is precise: FISE is a governed mechanism for
+reversible representation diversity whose adaptation effect can be measured.
+It is not a new cipher, a substitute for cryptography, or proof that a
+client-visible decoder imposes meaningful cost in every deployment.
+
+## Artifact appendices
+
+- **Appendix A — test matrix:** [CONFORMANCE.md](./CONFORMANCE.md)
+- **Appendix B — runtime/browser/package records:**
+  [RELEASE_EVIDENCE.md](./RELEASE_EVIDENCE.md)
+- **Appendix C — conformance vectors:** [CONFORMANCE.md](./CONFORMANCE.md)
+- **Appendix D — adaptation-study protocol:**
+  [ADAPTATION_EVALUATION.md](./ADAPTATION_EVALUATION.md)
+
+## References
+
+1. [RFC 8259 — The JavaScript Object Notation Data Interchange Format](https://www.rfc-editor.org/info/rfc8259)
+2. [RFC 8949 — Concise Binary Object Representation](https://www.rfc-editor.org/info/rfc8949)
+3. [Protocol Buffers proto3 language guide and message evolution](https://protobuf.dev/programming-guides/proto3/)
+4. [RFC 6838 — Media Type Specifications and Registration Procedures](https://www.rfc-editor.org/info/rfc6838)
+5. [RFC 9110 — HTTP Semantics](https://www.rfc-editor.org/info/rfc9110)
+6. [RFC 8785 — JSON Canonicalization Scheme](https://www.rfc-editor.org/info/rfc8785)
+7. [NIST SP 800-160 Volume 2 Revision 1 — Cyber Resiliency Engineering Framework](https://doi.org/10.6028/NIST.SP.800-160v2r1)
+8. [OWASP Automated Threats to Web Applications](https://owasp.org/www-project-automated-threats-to-web-applications/)
+9. [Collberg, Thomborson, and Low — Manufacturing Cheap, Resilient, and Stealthy Opaque Constructs](https://doi.org/10.1145/268946.268962)
+10. [RFC 7516 — JSON Web Encryption](https://www.rfc-editor.org/info/rfc7516)
+11. [Chow, Eisen, Johnson, and van Oorschot — White-Box Cryptography and an AES Implementation](https://link.springer.com/chapter/10.1007/3-540-36492-7_17)
+12. [WebAssembly Core Specification](https://www.w3.org/TR/wasm-core/)
+13. [WebAssembly JavaScript Interface](https://www.w3.org/TR/wasm-js-api-2/)
+14. [Content Security Policy Level 3](https://www.w3.org/TR/CSP3/)
+15. [Web Cryptography Level 2](https://www.w3.org/TR/WebCryptoAPI/)

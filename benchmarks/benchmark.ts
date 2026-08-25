@@ -2,26 +2,24 @@
 
 /**
  * FISE Performance Benchmark Suite
- * 
+ *
  * Measures encrypt/decrypt performance across various payload sizes
  * and provides detailed statistics.
  */
 
 import { fiseEncrypt, fiseDecrypt } from "../src/fiseEncrypt.js";
-import { xorCipher } from "../src/core/xorCipher.js";
-import { defaultRules } from "../src/rules/defaultRules.js";
-import { writeFileSync, readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
+import { defaultStringProfile } from "../src/profiles/defaultStringProfile.js";
 
 interface BenchmarkResult {
 	size: number;
 	iterations: number;
+	warmup: number;
 	encrypt: {
 		mean: number;
 		median: number;
 		p95: number;
 		p99: number;
+		standardDeviation: number;
 		min: number;
 		max: number;
 	};
@@ -30,12 +28,18 @@ interface BenchmarkResult {
 		median: number;
 		p95: number;
 		p99: number;
+		standardDeviation: number;
 		min: number;
 		max: number;
 	};
 	throughput: {
 		encrypt: number; // KB/s
 		decrypt: number; // KB/s
+	};
+	wire: {
+		envelopeBytes: number;
+		additiveBytes: number;
+		expansionRatio: number;
 	};
 }
 
@@ -44,18 +48,27 @@ function calculateStats(times: number[]): {
 	median: number;
 	p95: number;
 	p99: number;
+	standardDeviation: number;
 	min: number;
 	max: number;
 } {
 	const sorted = [...times].sort((a, b) => a - b);
 	const mean = times.reduce((a, b) => a + b, 0) / times.length;
-	const median = sorted[Math.floor(sorted.length / 2)];
-	const p95 = sorted[Math.floor(sorted.length * 0.95)];
-	const p99 = sorted[Math.floor(sorted.length * 0.99)];
+	const middle = Math.floor(sorted.length / 2);
+	const median = sorted.length % 2 === 0
+		? (sorted[middle - 1] + sorted[middle]) / 2
+		: sorted[middle];
+	const percentile = (fraction: number): number =>
+		sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * fraction) - 1))];
+	const p95 = percentile(0.95);
+	const p99 = percentile(0.99);
+	const standardDeviation = Math.sqrt(
+		times.reduce((sum, time) => sum + (time - mean) ** 2, 0) / times.length
+	);
 	const min = sorted[0];
 	const max = sorted[sorted.length - 1];
 
-	return { mean, median, p95, p99, min, max };
+	return { mean, median, p95, p99, standardDeviation, min, max };
 }
 
 function benchmark(
@@ -67,31 +80,31 @@ function benchmark(
 
 	// Warm up
 	for (let i = 0; i < warmup; i++) {
-		fiseEncrypt(plaintext, xorCipher, defaultRules);
+		fiseEncrypt(plaintext, defaultStringProfile);
 	}
 
 	// Benchmark encrypt
 	const encryptTimes: number[] = [];
 	for (let i = 0; i < iterations; i++) {
 		const start = process.hrtime.bigint();
-		fiseEncrypt(plaintext, xorCipher, defaultRules);
+		fiseEncrypt(plaintext, defaultStringProfile);
 		const end = process.hrtime.bigint();
 		encryptTimes.push(Number(end - start) / 1_000_000); // Convert to ms
 	}
 
 	// Get encrypted data for decrypt benchmark
-	const encrypted = fiseEncrypt(plaintext, xorCipher, defaultRules);
+	const encrypted = fiseEncrypt(plaintext, defaultStringProfile);
 
 	// Warm up decrypt
 	for (let i = 0; i < warmup; i++) {
-		fiseDecrypt(encrypted, xorCipher, defaultRules);
+		fiseDecrypt(encrypted, defaultStringProfile);
 	}
 
 	// Benchmark decrypt
 	const decryptTimes: number[] = [];
 	for (let i = 0; i < iterations; i++) {
 		const start = process.hrtime.bigint();
-		fiseDecrypt(encrypted, xorCipher, defaultRules);
+		fiseDecrypt(encrypted, defaultStringProfile);
 		const end = process.hrtime.bigint();
 		decryptTimes.push(Number(end - start) / 1_000_000); // Convert to ms
 	}
@@ -100,17 +113,23 @@ function benchmark(
 	const decryptStats = calculateStats(decryptTimes);
 
 	// Calculate throughput (KB/s)
-	const encryptThroughput = (size / encryptStats.mean) / 1024;
-	const decryptThroughput = (size / decryptStats.mean) / 1024;
+	const encryptThroughput = (size * 1000) / encryptStats.mean / 1024;
+	const decryptThroughput = (size * 1000) / decryptStats.mean / 1024;
 
 	return {
 		size,
 		iterations,
+		warmup,
 		encrypt: encryptStats,
 		decrypt: decryptStats,
 		throughput: {
 			encrypt: encryptThroughput,
 			decrypt: decryptThroughput
+		},
+		wire: {
+			envelopeBytes: encrypted.length,
+			additiveBytes: encrypted.length - size,
+			expansionRatio: size === 0 ? 0 : encrypted.length / size
 		}
 	};
 }
@@ -137,7 +156,7 @@ function printResults(results: BenchmarkResult[]): void {
 	console.log("Encrypt Performance:");
 	console.log("-".repeat(80));
 	console.log(
-		`${"Size".padEnd(12)} ${"Mean".padEnd(10)} ${"Median".padEnd(10)} ${"P95".padEnd(10)} ${"P99".padEnd(10)} ${"Throughput".padEnd(12)}`
+		`${"Size".padEnd(12)} ${"Mean".padEnd(10)} ${"Median".padEnd(10)} ${"P95".padEnd(10)} ${"P99".padEnd(10)} ${"Std dev".padEnd(10)} ${"Throughput".padEnd(12)}`
 	);
 	console.log("-".repeat(80));
 	for (const r of results) {
@@ -145,16 +164,17 @@ function printResults(results: BenchmarkResult[]): void {
 			`${formatBytes(r.size).padEnd(12)} ` +
 			`${formatNumber(r.encrypt.mean).padEnd(10)}ms ` +
 			`${formatNumber(r.encrypt.median).padEnd(10)}ms ` +
-			`${formatNumber(r.encrypt.p95).padEnd(10)}ms ` +
-			`${formatNumber(r.encrypt.p99).padEnd(10)}ms ` +
-			`${formatNumber(r.throughput.encrypt).padEnd(12)} KB/s`
+				`${formatNumber(r.encrypt.p95).padEnd(10)}ms ` +
+				`${formatNumber(r.encrypt.p99).padEnd(10)}ms ` +
+				`${formatNumber(r.encrypt.standardDeviation).padEnd(10)}ms ` +
+				`${formatNumber(r.throughput.encrypt).padEnd(12)} KB/s`
 		);
 	}
 
 	console.log("\nDecrypt Performance:");
 	console.log("-".repeat(80));
 	console.log(
-		`${"Size".padEnd(12)} ${"Mean".padEnd(10)} ${"Median".padEnd(10)} ${"P95".padEnd(10)} ${"P99".padEnd(10)} ${"Throughput".padEnd(12)}`
+		`${"Size".padEnd(12)} ${"Mean".padEnd(10)} ${"Median".padEnd(10)} ${"P95".padEnd(10)} ${"P99".padEnd(10)} ${"Std dev".padEnd(10)} ${"Throughput".padEnd(12)}`
 	);
 	console.log("-".repeat(80));
 	for (const r of results) {
@@ -162,9 +182,25 @@ function printResults(results: BenchmarkResult[]): void {
 			`${formatBytes(r.size).padEnd(12)} ` +
 			`${formatNumber(r.decrypt.mean).padEnd(10)}ms ` +
 			`${formatNumber(r.decrypt.median).padEnd(10)}ms ` +
-			`${formatNumber(r.decrypt.p95).padEnd(10)}ms ` +
-			`${formatNumber(r.decrypt.p99).padEnd(10)}ms ` +
-			`${formatNumber(r.throughput.decrypt).padEnd(12)} KB/s`
+				`${formatNumber(r.decrypt.p95).padEnd(10)}ms ` +
+				`${formatNumber(r.decrypt.p99).padEnd(10)}ms ` +
+				`${formatNumber(r.decrypt.standardDeviation).padEnd(10)}ms ` +
+				`${formatNumber(r.throughput.decrypt).padEnd(12)} KB/s`
+		);
+	}
+
+	console.log("\nString wire size (ASCII input):");
+	console.log("-".repeat(80));
+	console.log(
+		`${"Input".padEnd(12)} ${"Envelope".padEnd(12)} ${"Added".padEnd(12)} ${"Ratio".padEnd(12)}`
+	);
+	console.log("-".repeat(80));
+	for (const result of results) {
+		console.log(
+			`${formatBytes(result.size).padEnd(12)} ` +
+			`${formatBytes(result.wire.envelopeBytes).padEnd(12)} ` +
+			`${formatBytes(result.wire.additiveBytes).padEnd(12)} ` +
+			`${result.wire.expansionRatio.toFixed(3)}x`
 		);
 	}
 
@@ -184,62 +220,9 @@ function printResults(results: BenchmarkResult[]): void {
 	console.log("=".repeat(80) + "\n");
 }
 
-function updatePerformanceDoc(results: BenchmarkResult[]): void {
-	const __filename = fileURLToPath(import.meta.url);
-	const __dirname = dirname(__filename);
-	const perfPath = join(__dirname, "..", "docs", "PERFORMANCE.md");
-
-	let content = readFileSync(perfPath, "utf-8");
-
-	// Update the benchmark table
-	const sizes = results.map((r) => r.size);
-	const tableRows = results.map((r) => {
-		const sizeLabel =
-			r.size < 1024
-				? `${r.size} chars`
-				: r.size < 1024 * 1024
-					? `${(r.size / 1024).toFixed(1)} KB`
-					: `${(r.size / (1024 * 1024)).toFixed(1)} MB`;
-		const encryptTime = formatNumber(r.encrypt.mean);
-		const decryptTime = formatNumber(r.decrypt.mean);
-		const totalTime = formatNumber(r.encrypt.mean + r.decrypt.mean);
-		return `| ${sizeLabel.padEnd(12)} | ~${encryptTime.padEnd(8)} ms | ~${decryptTime.padEnd(8)} ms | ~${totalTime.padEnd(8)} ms |`;
-	});
-
-	const tableHeader = `| Payload Size | Encrypt (avg) | Decrypt (avg) | Total (avg) |`;
-	const tableSeparator = `| ------------ | ------------- | ------------- | ----------- |`;
-	const newTable = [tableHeader, tableSeparator, ...tableRows].join("\n");
-
-	// Replace the existing table
-	const tableRegex =
-		/\| Payload Size \| Encrypt \(avg\) \| Decrypt \(avg\) \| Total \(avg\) \|\n\|[^\n]+\n(\|[^\n]+\n)+/;
-	content = content.replace(tableRegex, newTable + "\n");
-
-	// Update the timestamp/version info if there's a section for it
-	const timestamp = new Date().toISOString().split("T")[0];
-	const nodeVersion = process.version;
-	const platform = `${process.platform} ${process.arch}`;
-
-	// Add or update a "Last Updated" section
-	if (content.includes("Last Updated")) {
-		content = content.replace(
-			/Last Updated:.*/,
-			`Last Updated: ${timestamp} (Node ${nodeVersion}, ${platform})`
-		);
-	} else {
-		// Add it after the first heading
-		content = content.replace(
-			/(## Sample benchmark[^\n]+\n)/,
-			`$1\n> **Last Updated**: ${timestamp} (Node ${nodeVersion}, ${platform})\n\n`
-		);
-	}
-
-	writeFileSync(perfPath, content, "utf-8");
-	console.log(`\n✓ Updated ${perfPath}`);
-}
-
 function main() {
-	console.log("Running FISE benchmarks...\n");
+	const jsonOutput = process.argv.includes("--json");
+	if (!jsonOutput) console.log("Running FISE benchmarks...\n");
 
 	// Test different payload sizes
 	const sizes = [100, 500, 1000, 5000, 10000, 50000];
@@ -248,20 +231,23 @@ function main() {
 	const results: BenchmarkResult[] = [];
 
 	for (const size of sizes) {
-		process.stdout.write(`Benchmarking ${formatBytes(size)}... `);
+		if (!jsonOutput) process.stdout.write(`Benchmarking ${formatBytes(size)}... `);
 		const result = benchmark(size, iterations);
 		results.push(result);
-		console.log("✓");
+		if (!jsonOutput) console.log("✓");
 	}
 
+	if (jsonOutput) {
+		process.stdout.write(`${JSON.stringify({
+			schema: "fise.string-benchmark/1",
+			runtime: process.version,
+			platform: `${process.platform}-${process.arch}`,
+			measurementScope: "default string full encode and decode with ASCII payloads",
+			results
+		}, null, 2)}\n`);
+		return;
+	}
 	printResults(results);
-
-	// Update PERFORMANCE.md
-	try {
-		updatePerformanceDoc(results);
-	} catch (error) {
-		console.error("\n⚠ Warning: Could not update PERFORMANCE.md:", error);
-	}
 }
 
 // Run if executed directly
@@ -270,4 +256,3 @@ if (import.meta.url.endsWith(process.argv[1]) || process.argv[1]?.includes('benc
 }
 
 export { benchmark, BenchmarkResult };
-

@@ -12,7 +12,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [18.x, 20.x, 22.x]
+        node-version: [20.x, 22.x]
 
     steps:
       - name: Checkout code
@@ -23,13 +23,23 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      - name: Setup Python reference runtime
+        if: matrix.node-version == '22.x'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
       - name: Run tests
         shell: bash
         run: |
           npm test
+
+      - name: Verify independent Python interoperability
+        if: matrix.node-version == '22.x'
+        run: npm run verify:interop
 
       - name: Check build output
         run: |
@@ -38,3 +48,9 @@ jobs:
             exit 1
           fi
           echo "Build successful - dist directory exists"
+
+      - name: Verify package exports and artifacts
+        run: npm run verify:package
+
+      - name: Verify packed artifact in an empty consumer
+        run: npm run verify:packed

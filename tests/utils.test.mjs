@@ -1,6 +1,12 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { randomSalt, toBase64, fromBase64 } from "../dist/core/utils.js";
+import {
+	fromBase64,
+	randomIntegerInclusive,
+	randomSalt,
+	randomSaltBinary,
+	toBase64
+} from "../dist/core/utils.js";
 
 test("randomSalt - generates string of correct length", () => {
 	const len = 20;
@@ -39,6 +45,28 @@ test("randomSalt - various lengths", () => {
 		const salt = randomSalt(len);
 		assert.strictEqual(salt.length, len);
 	}
+});
+
+test("randomSaltBinary - supports Web Crypto chunk boundaries", () => {
+	const salt = randomSaltBinary(70_000);
+	assert.ok(salt instanceof Uint8Array);
+	assert.strictEqual(salt.length, 70_000);
+});
+
+test("random salt helpers reject invalid lengths", () => {
+	assert.throws(() => randomSalt(-1), { code: "INVALID_SALT" });
+	assert.throws(() => randomSaltBinary(1.5), { code: "INVALID_SALT" });
+	assert.throws(() => randomSalt(Number.MAX_SAFE_INTEGER), { code: "INVALID_SALT" });
+	assert.throws(() => randomSaltBinary(Number.MAX_SAFE_INTEGER), { code: "INVALID_SALT" });
+});
+
+test("randomIntegerInclusive - stays inside the inclusive range", () => {
+	assert.strictEqual(randomIntegerInclusive(7, 7), 7);
+	for (let index = 0; index < 100; index++) {
+		const value = randomIntegerInclusive(10, 99);
+		assert.ok(value >= 10 && value <= 99);
+	}
+	assert.throws(() => randomIntegerInclusive(20, 10), { code: "INVALID_PROFILE" });
 });
 
 test("toBase64 and fromBase64 - roundtrip", () => {
@@ -108,4 +136,9 @@ test("toBase64 and fromBase64 - JSON data", () => {
 	assert.strictEqual(decoded, original);
 	const parsed = JSON.parse(decoded);
 	assert.strictEqual(parsed.name, "FISE");
+});
+
+test("fromBase64 rejects non-canonical or invalid UTF-8 input", () => {
+	assert.throws(() => fromBase64("not base64"), { code: "INVALID_CIPHERTEXT" });
+	assert.throws(() => fromBase64("/w=="), { code: "INVALID_CIPHERTEXT" });
 });

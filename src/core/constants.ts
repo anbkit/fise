@@ -12,6 +12,15 @@ export const DEFAULT_SALT_RANGE = {
 	max: 99
 } as const;
 
+export const FISE_WIRE_VERSION = Object.freeze({
+	major: 1,
+	minor: 1
+} as const);
+
+export const MAX_SALT_LENGTH = 0xffff;
+export const MAX_MARKER_SIZE = 0xff;
+export const MAX_PROFILE_ID_LENGTH = 0x3f;
+
 /**
  * Default offset calculation multipliers and modulos.
  * Used in timestamp-based offset calculations.
@@ -20,9 +29,3 @@ export const DEFAULT_OFFSET_PARAMS = {
 	MULTIPLIER: 7,
 	MODULO: 11
 } as const;
-
-/**
- * Dummy character used for offset calculation in string mode.
- * Used to create placeholder strings for length-based calculations.
- */
-export const DUMMY_CHAR = 'x';

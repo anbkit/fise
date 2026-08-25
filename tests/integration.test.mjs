@@ -1,8 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
-import { fiseEncrypt, fiseDecrypt } from "../dist/index.js";
-import { xorCipher } from "../dist/core/xorCipher.js";
-import { defaultRules } from "../dist/rules/defaultRules.js";
+import { defineStringProfile, fiseEncrypt, fiseDecrypt } from "../dist/index.js";
+import { defaultStringProfile } from "../dist/profiles/defaultStringProfile.js";
 
 test("integration - full pipeline with various data types", () => {
 	const testCases = [
@@ -18,8 +17,8 @@ test("integration - full pipeline with various data types", () => {
 	];
 
 	for (const plaintext of testCases) {
-		const encrypted = fiseEncrypt(plaintext, defaultRules);
-		const decrypted = fiseDecrypt(encrypted, defaultRules);
+		const encrypted = fiseEncrypt(plaintext, defaultStringProfile);
+		const decrypted = fiseDecrypt(encrypted, defaultStringProfile);
 
 		assert.strictEqual(decrypted, plaintext, `Failed for: ${plaintext.substring(0, 50)}`);
 	}
@@ -30,8 +29,8 @@ test("integration - multiple encryptions of same data", () => {
 	const results = [];
 
 	for (let i = 0; i < 5; i++) {
-		const encrypted = fiseEncrypt(plaintext, defaultRules);
-		const decrypted = fiseDecrypt(encrypted, defaultRules);
+		const encrypted = fiseEncrypt(plaintext, defaultStringProfile);
+		const decrypted = fiseDecrypt(encrypted, defaultStringProfile);
 		assert.strictEqual(decrypted, plaintext);
 		results.push(encrypted);
 	}
@@ -45,10 +44,10 @@ test("integration - with timestamp context", () => {
 	const plaintext = "Timestamped message";
 	const timestamp = 12345;
 
-	const encrypted = fiseEncrypt(plaintext, defaultRules, {
+	const encrypted = fiseEncrypt(plaintext, defaultStringProfile, {
 		timestamp
 	});
-	const decrypted = fiseDecrypt(encrypted, defaultRules, {
+	const decrypted = fiseDecrypt(encrypted, defaultStringProfile, {
 		timestamp
 	});
 
@@ -63,13 +62,14 @@ test("integration - different salt length ranges", () => {
 		{ min: 15, max: 15 } // Same min and max
 	];
 
-	for (const range of ranges) {
-		const customRules = {
-			...defaultRules,
-			saltRange: range
-		};
-		const encrypted = fiseEncrypt(plaintext, customRules);
-		const decrypted = fiseDecrypt(encrypted, customRules);
+	for (const [index, range] of ranges.entries()) {
+		const customProfile = defineStringProfile({
+			...defaultStringProfile,
+			id: `test.integration.range-${index}`,
+			layout: { ...defaultStringProfile.layout, saltRange: range }
+		});
+		const encrypted = fiseEncrypt(plaintext, customProfile);
+		const decrypted = fiseDecrypt(encrypted, customProfile);
 
 		assert.strictEqual(decrypted, plaintext);
 	}
@@ -88,8 +88,8 @@ test("integration - API response simulation", () => {
 	};
 
 	const plaintext = JSON.stringify(apiResponse);
-	const encrypted = fiseEncrypt(plaintext, defaultRules);
-	const decrypted = fiseDecrypt(encrypted, defaultRules);
+	const encrypted = fiseEncrypt(plaintext, defaultStringProfile);
+	const decrypted = fiseDecrypt(encrypted, defaultStringProfile);
 
 	assert.strictEqual(decrypted, plaintext);
 
@@ -108,8 +108,8 @@ test("integration - large payload", () => {
 	};
 
 	const plaintext = JSON.stringify(largeData);
-	const encrypted = fiseEncrypt(plaintext, defaultRules);
-	const decrypted = fiseDecrypt(encrypted, defaultRules);
+	const encrypted = fiseEncrypt(plaintext, defaultStringProfile);
+	const decrypted = fiseDecrypt(encrypted, defaultStringProfile);
 
 	assert.strictEqual(decrypted, plaintext);
 
@@ -123,8 +123,8 @@ test("integration - performance: multiple operations", () => {
 
 	const start = Date.now();
 	for (let i = 0; i < iterations; i++) {
-		const encrypted = fiseEncrypt(plaintext, defaultRules);
-		const decrypted = fiseDecrypt(encrypted, defaultRules);
+		const encrypted = fiseEncrypt(plaintext, defaultStringProfile);
+		const decrypted = fiseDecrypt(encrypted, defaultStringProfile);
 		assert.strictEqual(decrypted, plaintext);
 	}
 	const end = Date.now();
@@ -141,28 +141,26 @@ test("integration - error handling: wrong timestamp", () => {
 	const timestamp1 = 100;
 	const timestamp2 = 200;
 
-	const encrypted = fiseEncrypt(plaintext, defaultRules, {
+	const encrypted = fiseEncrypt(plaintext, defaultStringProfile, {
 		timestamp: timestamp1
 	});
 
-	try {
-		const decrypted = fiseDecrypt(encrypted, defaultRules, {
+	assert.throws(
+		() => fiseDecrypt(encrypted, defaultStringProfile, {
 			timestamp: timestamp2
-		});
-		assert.strictEqual(typeof decrypted, "string");
-	} catch (error) {
-		assert.ok(/FISE: cannot/.test(error.message));
-	}
+		}),
+		{ code: "MARKER_MISMATCH" }
+	);
 });
 
 test("integration - envelope structure validation", () => {
 	const plaintext = "Structure test";
-	const encrypted = fiseEncrypt(plaintext, defaultRules);
+	const encrypted = fiseEncrypt(plaintext, defaultStringProfile);
 
 	// Envelope should be longer than plaintext (contains salt + metadata)
 	assert.ok(encrypted.length > plaintext.length);
 
 	// Should be able to decrypt
-	const decrypted = fiseDecrypt(encrypted, defaultRules);
+	const decrypted = fiseDecrypt(encrypted, defaultStringProfile);
 	assert.strictEqual(decrypted, plaintext);
 });

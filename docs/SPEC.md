@@ -1,289 +1,312 @@
-# FISE Specification
+# FISE 1.1 Reference Envelope Specification
 
-## Version
+## 1. Status and scope
 
-This specification describes FISE v0.1.2+ (simplified rules architecture).
+This document specifies the string and binary wire formats implemented by FISE
+1.1. A conforming decoder accepts exactly version `1.1`. It rejects the earlier
+magic-less representation; no legacy negotiation exists in this version.
 
-## Core Interfaces
+The functions are operationally named `encrypt` and `decrypt`. This
+specification defines reversible framing, compatibility, and structural
+validation. A transform supplies any stronger property. The built-in XOR
+transforms provide neither cryptographic confidentiality nor authenticity.
 
-### `FiseRules`
+The key words MUST, MUST NOT, SHOULD, and MAY describe interoperability
+requirements.
 
-The core interface for FISE rules. Requires only 3 methods:
+## 2. Atomic profile model
 
-```typescript
-interface FiseRules {
-  // REQUIRED - Security Point #1
-  offset(cipherText: string, ctx: FiseContext): number;
-  
-  // REQUIRED - Security Point #2
-  encodeLength(len: number, ctx: FiseContext): string;
-  
-  // REQUIRED - Security Point #3
-  decodeLength(encoded: string, ctx: FiseContext): number;
-  
-  // OPTIONAL
+Each operation receives exactly one profile:
+
+```ts
+interface FiseLayoutInput {
+  transformedLength: number;
+  saltLength: number;
+}
+
+interface FiseLayout<T extends string | Uint8Array> {
+  markerSize: number;
   saltRange?: { min: number; max: number };
-  extractSalt?(envelope: string, saltLen: number, ctx: FiseContext): string;
-  stripSalt?(envelope: string, saltLen: number, ctx: FiseContext): string;
-  meta?: { name?: string; description?: string; source?: string; ... };
+  offset(input: FiseLayoutInput, ctx: FiseContext): number;
+  createMarker(input: FiseLayoutInput, ctx: FiseContext): T;
+}
+
+interface FiseStringProfile {
+  id: string;
+  representation: "string";
+  transform: FiseCipher;
+  layout: FiseLayout<string>;
+  context?: FiseContextContract;
+  limits?: { maxEnvelopeLength?: number };
+  manifestDigest?: string;
+}
+
+interface FiseBinaryProfile {
+  id: string;
+  representation: "binary";
+  transform: FiseBinaryCipher;
+  layout: FiseLayout<Uint8Array>;
+  context?: FiseContextContract;
+  limits?: { maxEnvelopeLength?: number };
+  manifestDigest?: string;
 }
 ```
 
-### `FiseContext`
+The profile owns its transform. Passing an unrelated cipher in operation
+options is not part of 1.1. A byte-compatible implementation backend MAY be
+bound only when its stable transform ID equals the profile transform ID and it
+passes the implementation-compatibility checks. Built-in string and binary
+transform IDs are reserved for implementations registered by FISE; custom IDs
+remain an application-owned trusted-code boundary.
 
-Context information passed to rule methods:
+`defineStringProfile` and `defineBinaryProfile` validate the static surface and
+return frozen copies. Runtime operations additionally validate active context,
+marker output, offset output, transform output, and envelope fields.
 
-```typescript
-interface FiseContext {
-  timestamp?: number;  // Timestamp in minutes (for rotation)
-  saltLength?: number;        // Current salt length (during decryption)
-  randomSeed?: number;        // Optional random seed
-}
-```
+The common runtime interface does not imply one common portability guarantee.
+A profile compiled from `fise.profile/1` is reproducible by implementations of
+that declarative schema. An application-defined callback profile is a trusted
+local contract whose ID and cross-language semantics remain the application's
+responsibility.
 
-### `FiseCipher`
+## 3. Profile invariants
 
-Cipher interface for encryption/decryption:
+A conforming profile satisfies all of the following:
 
-```typescript
-interface FiseCipher {
-  encrypt(plaintext: string, salt: string): string;
-  decrypt(cipherText: string, salt: string): string;
-}
-```
+1. `id` contains 1–63 ASCII characters matching
+   `[A-Za-z0-9][A-Za-z0-9._-]*`.
+2. `representation` matches the selected operation.
+3. `transform.id` follows the same identifier grammar.
+4. `saltRange` defaults to 10–99 and satisfies
+   `1 <= min <= max <= 65535`.
+5. `markerSize` is an integer from 1 through 255.
+6. `createMarker` returns exactly `markerSize` string units or bytes.
+7. `offset` returns a finite number. The reference runtime normalizes it as:
 
-## Envelope Format
+   ```text
+   p = max(0, min(trunc(offset), transformedLength))
+   ```
 
-### Structure
+8. Layout behavior is deterministic from `FiseLayoutInput` and the declared
+   context. It MUST NOT require transformed payload contents.
+9. Producer and consumer use the same profile and relevant external context.
+10. A profile-level envelope bound, when present, is a non-negative safe
+    integer.
+11. A profile claiming a reserved built-in transform ID uses a FISE-registered
+    implementation function pair.
 
-```
-[ ciphertext_prefix ] [ encoded_length ] [ ciphertext_suffix ] [ salt ]
+There is no marker decoder. Salt length is a declared header field. The decoder
+recomputes the expected marker from `{ transformedLength, saltLength }` and the
+active context, then compares it with the marker found at the expected offset.
+
+The marker is a profile-consistency signal, not a MAC. Context mismatches are
+detectable only when the profile maps them to a different marker or marker
+position; collisions are possible and deliberate rewriting remains possible.
+The marker does not cover transformed payload or salt contents, so a
+same-length mutation outside the marker is not generally detected. No generic
+false-acceptance probability is specified because bytes read at an incorrect
+position need not follow a uniform distribution.
+
+## 4. Context contract
+
+`timestamp` can be `required`, `optional`, or `forbidden`. Metadata fields can
+be required or optional primitive `string`, `number`, or `boolean` values.
+Numbers MUST be safe integers. Undeclared metadata is rejected unless
+`allowAdditionalMetadata` is true.
+
+Operation options and metadata MUST be plain objects containing only own,
+enumerable data properties with string keys. Accessors and symbol keys are
+rejected. The runtime snapshots these values once before validation and uses
+that immutable snapshot for the complete operation.
+
+Context is external and is not serialized in the envelope. FISE does not try a
+previous timestamp or alternate metadata value. Rollover, replay, and fallback
+policy belong to the application.
+
+## 5. Common logical layout
+
+Both representations use:
+
+```text
+H || X[0:p] || M || X[p:N] || S
 ```
 
 Where:
-- `ciphertext_prefix` + `ciphertext_suffix` = full ciphertext (split at offset)
-- `encoded_length` = metadata (encoded salt length)
-- `salt` = random salt string
 
-### Example
+- `H` is the FISE header;
+- `X` is the transformed payload;
+- `N` is the declared length of `X`;
+- `M` is the fixed-width profile marker;
+- `p` is the normalized marker offset; and
+- `S` is the salt of declared length `L`.
 
-For a ciphertext "abc123" with offset 2 and salt length 15:
+Salt is always at the tail. The exact total length is:
 
-```
-offset = 2
-encoded_length = "0f" (15 in base36)
-salt = "randomSalt12345"
-
-Envelope: "ab0fc123randomSalt12345"
-          └─┬─┘└┬┘└─┬──┘└──────┬──────┘
-            │   │   │          │
-            │   │   │          └─ salt (15 chars)
-            │   │   └─ ciphertext_suffix
-            │   └─ encoded_length ("0f")
-            └─ ciphertext_prefix
+```text
+length(E) = headerLength + N + markerSize + L
 ```
 
-## Encryption Algorithm
+## 6. String header
 
-### Inputs
+The fixed header is 22 ASCII string units followed by the ASCII profile ID.
 
-- `plaintext: string` - The data to encrypt
-- `cipher: FiseCipher` - The cipher implementation
-- `rules: FiseRules` - The rules to use
-- `options: EncryptOptions` - Optional encryption options
+| String offsets | Width | Encoding | Field |
+| ---: | ---: | --- | --- |
+| `0..3` | 4 | literal | `FISE` |
+| `4..5` | 2 | hexadecimal | major version, `01` |
+| `6..7` | 2 | hexadecimal | minor version, `01` |
+| `8..9` | 2 | hexadecimal | profile ID length |
+| `10..13` | 4 | hexadecimal | salt length `L` |
+| `14..21` | 8 | hexadecimal | transformed length `N` |
+| `22..` | declared | ASCII | profile ID |
 
-### Steps
+The encoder emits lowercase hexadecimal. The parser accepts either letter
+case. Lengths and offsets are JavaScript string-unit counts.
 
-1. **Normalize Rules**
-   - Call `normalizeFiseRules(rules)` to fill in optional methods
-   - Result: `NormalizedFiseRules` with all methods
+## 7. Binary header
 
-2. **Generate Salt**
-   - Get `saltRange` from rules (default: { min: 10, max: 99 })
-   - Generate random salt length: `min + floor(random() * (max - min + 1))`
-   - Generate random salt string of that length
+The fixed header is 13 bytes followed by the ASCII profile ID.
 
-3. **Encrypt Plaintext**
-   - Call `cipher.encrypt(plaintext, salt)`
-   - Result: `cipherText`
+| Byte offsets | Width | Encoding | Field |
+| ---: | ---: | --- | --- |
+| `0..3` | 4 | `46 49 53 45` | `FISE` |
+| `4` | 1 | unsigned byte | major version, `1` |
+| `5` | 1 | unsigned byte | minor version, `1` |
+| `6` | 1 | unsigned byte | profile ID length |
+| `7..8` | 2 | unsigned big-endian | salt length `L` |
+| `9..12` | 4 | unsigned big-endian | transformed length `N` |
+| `13..` | declared | ASCII | profile ID |
 
-4. **Encode Salt Length**
-   - Call `rules.encodeLength(saltLen, ctx)`
-   - Result: `encodedLen` (e.g., "0a" for base36)
+Binary lengths and offsets are byte counts.
 
-5. **Calculate Offset**
-   - Call `rules.offset(cipherText, ctx)`
-   - Clamp to valid range: `max(0, min(offset, cipherText.length))`
-   - Result: `offset`
+## 8. Encode algorithm
 
-6. **Insert Metadata**
-   - `cipherText.slice(0, offset) + encodedLen + cipherText.slice(offset)`
-   - Result: `withLen`
+Inputs are payload `P`, atomic profile `R`, and caller options.
 
-7. **Append Salt**
-   - `withLen + salt`
-   - Result: `envelope` (final output)
+1. Validate the profile representation and active context.
+2. Select salt length `L` uniformly from the inclusive profile range using
+   rejection sampling over Web Crypto.
+3. Generate salt `S`. String salt uses unbiased alphanumeric characters;
+   binary salt uses the full byte range.
+4. Compute `X = R.transform.encrypt(P, S)` and validate its representation.
+5. Let `N = length(X)` and `I = { transformedLength: N, saltLength: L }`.
+6. Compute `M = R.layout.createMarker(I, ctx)` and require its exact width.
+7. Compute normalized position `p` from `R.layout.offset(I, ctx)`.
+8. Encode `H` with version 1.1, profile ID, `L`, and `N`.
+9. Require the final length to fit the profile envelope limit, when present.
+10. Return `H || X[0:p] || M || X[p:N] || S`.
 
-## Decryption Algorithm
+## 9. Decode algorithm
 
-### Inputs
+Inputs are envelope `E`, expected profile `R`, and caller options.
 
-- `envelope: string` - The encrypted envelope
-- `cipher: FiseCipher` - The cipher implementation (must match encryption)
-- `rules: FiseRules` - The rules to use (must match encryption)
-- `options: DecryptOptions` - Optional decryption options
+1. Validate the profile representation and active context.
+2. Resolve the stricter of profile and caller `maxEnvelopeLength`; reject an
+   oversized `E` before header parsing.
+3. Require magic `FISE` and exact version 1.1.
+4. Parse and validate profile length, profile ID, `L`, and `N`.
+5. Require the parsed profile ID to equal `R.id`.
+6. Require `L` to be inside the profile salt range.
+7. Require the exact total-length equation from section 5.
+8. Construct `I = { transformedLength: N, saltLength: L }` and compute `p`.
+9. Read actual marker `M` at `p`; recompute the expected marker and require
+   byte-for-byte or string-unit equality.
+10. Read the final `L` units as salt `S` and remove `M` to reconstruct `X`.
+11. Compute `P = R.transform.decrypt(X, S)` and validate its representation.
+12. Return `P`.
 
-### Steps
+No candidate scanning, profile fallback, legacy parsing, or context fallback is
+permitted.
 
-1. **Normalize Rules**
-   - Call `normalizeFiseRules(rules)` to fill in optional methods
-   - Result: `NormalizedFiseRules` with all methods
+## 10. Default profiles
 
-2. **Pre-Extract Length** (Brute-Force Search)
-   - For each `saltLen` in `saltRange`:
-     - Strip salt: `stripSalt(envelope, saltLen)`
-     - For each position `i` in stripped string:
-       - Extract candidate: `slice(i, i + encodedLengthSize)`
-       - Decode: `decodeLength(candidate)`
-       - If decoded length matches `saltLen`:
-         - Remove metadata: `slice(0, i) + slice(i + encodedLengthSize)`
-         - Calculate expected offset: `offset(candidate, ctx)`
-         - If expected offset matches position `i`:
-           - **Found!** Return `{ saltLength, encodedLength, withoutLen }`
-   - If not found, throw error
+### `fise.default.string`
 
-3. **Extract Salt**
-   - Call `extractSalt(envelope, saltLength, ctx)`
-   - Result: `salt`
+- transform ID: `fise.xor.utf16.v1`;
+- salt range: 10–99 alphanumeric string units;
+- marker: two-character lowercase base36 encoding of salt length;
+- position: `(N * 7 + ((timestamp ?? 0) % 11)) % (N || 1)`; and
+- transform: repeating XOR over UTF-16 code units, serialized as two
+  big-endian bytes per unit and canonical base64.
 
-4. **Calculate Expected Offset**
-   - Calculate ciphertext length: `withoutLen.length - encodedLengthSize`
-   - Call `offset(dummyCipherText, ctx)` to get expected position
-   - Result: `expectedOffset`
+An implementation in another language MUST model this representation as a
+sequence of 16-bit code units, not as Unicode scalar values. Implementations
+that cannot preserve lone surrogates SHOULD support the binary/UTF-8 surface
+instead of claiming full conformance to the default string profile.
 
-5. **Validate and Remove Metadata**
-   - Check if metadata at `expectedOffset` matches `encodedLength`
-   - If not, throw error
-   - Remove metadata: `withoutLen.slice(0, expectedOffset) + withoutLen.slice(expectedOffset + encodedLengthSize)`
-   - Result: `cipherText`
+### `fise.default.binary`
 
-6. **Decrypt**
-   - Call `cipher.decrypt(cipherText, salt)`
-   - Result: `plaintext` (final output)
+- transform ID: `fise.xor.u8.v1`;
+- salt range: 10–99 arbitrary bytes;
+- marker: two-byte unsigned big-endian salt length;
+- position: the same formula; and
+- transform: repeating byte XOR in JavaScript or the byte-compatible WASM
+  backend.
 
-## Default Behaviors
+Both default profiles allow an optional safe-integer timestamp and reject all
+metadata.
 
-### Salt Range
+## 11. Error contract
 
-- **Default**: `{ min: 10, max: 99 }`
-- **Override**: Set `rules.saltRange`
+Validation failures are `FiseError` values with stable codes:
 
-### Salt Extraction
+| Code | Meaning |
+| --- | --- |
+| `INVALID_INPUT` | Wrong public input type or invalid caller limit |
+| `INVALID_PROFILE` | Invalid profile, manifest, layout, marker, or offset |
+| `INVALID_CONTEXT` | Missing, forbidden, undeclared, or wrongly typed context |
+| `INVALID_SALT` | Invalid or out-of-profile salt |
+| `INVALID_ENVELOPE` | Malformed header or field |
+| `UNSUPPORTED_VERSION` | Wire/media version is not exactly 1.1 |
+| `PROFILE_MISMATCH` | Envelope/media profile differs from the supplied profile |
+| `TRANSFORM_MISMATCH` | Backend transform identity or semantics are incompatible |
+| `LENGTH_MISMATCH` | Declared and actual envelope lengths differ |
+| `ENVELOPE_LIMIT` | Envelope exceeds a configured maximum |
+| `MARKER_MISMATCH` | Recomputed marker differs from the envelope marker |
+| `INVALID_CIPHERTEXT` | Transform input/output is malformed |
+| `INVALID_PAYLOAD` | Restored UTF-8, JSON, or HTTP metadata is malformed |
+| `RANDOM_UNAVAILABLE` | Web Crypto randomness is unavailable or failed |
+| `RUNTIME_UNAVAILABLE` | Another required runtime primitive is unavailable |
+| `WASM_UNAVAILABLE` | Required WebAssembly APIs are absent |
+| `WASM_COMPILE_FAILED` | WASM compilation, instantiation, or export validation failed |
+| `WASM_MEMORY_LIMIT` | WASM memory32 capacity or growth failed |
 
-- **Default**: Tail-based (salt at end)
-  ```typescript
-  extractSalt(envelope, saltLen) {
-    return envelope.slice(-saltLen);
-  }
-  stripSalt(envelope, saltLen) {
-    return envelope.slice(0, envelope.length - saltLen);
-  }
-  ```
-- **Override**: Provide custom `extractSalt()` and `stripSalt()`
+Existing `FiseError` values thrown by application callbacks retain their code.
+Other transform exceptions are normalized to `INVALID_CIPHERTEXT`; other
+layout exceptions are normalized to `INVALID_PROFILE`. Compiled profiles avoid
+the open callback surface for supported declarative behavior.
 
-### Encoding
+## 12. Complexity and resource bounds
 
-- **Default**: Base36, 2 characters
-  ```typescript
-  encodeLength(len) {
-    return len.toString(36).padStart(2, "0");
-  }
-  decodeLength(encoded) {
-    return parseInt(encoded, 36);
-  }
-  ```
-- **Override**: Provide custom `encodeLength()` and `decodeLength()`
+Let `n` be transformed length. Header work is constant apart from copying the
+bounded profile ID. Transform, assembly, reconstruction, and output storage are
+`O(n)`. Version 1.1 has no salt-range candidate factor.
 
-## Error Conditions
+The non-streaming API holds complete input and output buffers. A streaming
+grammar requires a new wire version and is not defined by concatenating 1.1
+envelopes.
 
-### Encryption Errors
+HTTP response adapters may ingest a body incrementally only to enforce an
+effective decoded-envelope maximum before complete allocation. They still
+return a complete decoded value and do not define streaming wire semantics.
+Non-identity `Content-Length` describes the coded representation and is not
+compared with bytes exposed by Fetch after decoding.
 
-- None (always succeeds if inputs are valid)
+The optional WASM backend defaults to at most 1,024 retained 64-KiB pages per
+instance. `maxMemoryPages` may configure 1 through 65,536 pages. Required
+capacity is page-rounded over input plus salt; linear memory retains its
+high-water page count until the instance is discarded.
 
-### Decryption Errors
+## 13. Conformance and security interpretation
 
-1. **"FISE: cannot infer salt length from envelope."**
-   - Cause: Brute-force search failed to find valid salt length
-   - Possible reasons:
-     - Wrong rules (offset/encoding mismatch)
-     - Corrupted envelope
-     - Wrong timestamp (if timestamp-dependent)
+Deterministic fixtures are defined in [CONFORMANCE.md](./CONFORMANCE.md).
+Manifest and rotation behavior are defined in
+[PROFILE_MANIFEST.md](./PROFILE_MANIFEST.md).
 
-2. **"FISE: cannot find encoded length at expected offset."**
-   - Cause: Metadata not found at expected position
-   - Possible reasons:
-     - Wrong rules
-     - Wrong timestamp
-     - Offset depends on content (not just length)
+The independent Python reference verifies the compiled binary subset and is
+linked from [CONFORMANCE.md](./CONFORMANCE.md). It does not make handwritten
+callbacks or the JavaScript UTF-16 surface portable by implication.
 
-## Compliance
-
-### Rule Requirements
-
-1. **`offset()` must be deterministic**
-   - Same inputs → same output
-   - Must return valid index: `0 <= offset < cipherText.length`
-
-2. **`encodeLength()` and `decodeLength()` must be inverse**
-   - `decodeLength(encodeLength(len)) === len` for all valid lengths
-   - Must handle edge cases (NaN, out of range)
-
-3. **`extractSalt()` and `stripSalt()` must be consistent**
-   - `stripSalt(envelope, saltLen) + extractSalt(envelope, saltLen) === envelope`
-   - Must work for all valid salt lengths
-
-### Cipher Requirements
-
-1. **Must be deterministic**
-   - `decrypt(encrypt(plaintext, salt), salt) === plaintext`
-   - Same inputs → same output
-
-2. **Must handle all string inputs**
-   - Empty strings
-   - Unicode characters
-   - Special characters
-
-## Implementation Notes
-
-### Performance Optimizations
-
-1. **Decryption uses direct offset calculation**
-   - Instead of searching for metadata, calculates expected position
-   - Only validates that metadata is at expected position
-   - Reduces complexity from O(n²) to O(n)
-
-2. **Brute-force is optimized**
-   - Early termination when valid solution found
-   - Skips invalid candidates quickly
-   - Uses offset validation to reduce search space
-
-### Security Considerations
-
-1. **Salt length range affects security**
-   - Wider range → larger search space
-   - But range doesn't create diversity (not a security point)
-
-2. **Offset calculation is the primary security point**
-   - Must vary per app
-   - Should use timestamp for rotation
-
-3. **Encoding doesn't add security**
-   - But creates format diversity
-   - Makes metadata less obvious
-
-## See Also
-
-- [Whitepaper](./WHITEPAPER.md) - Complete technical specification and architecture
-- [Rules Guide](./RULES.md) - How to create rules
-- [Quick Start](./QUICK_START.md) - Quick examples
-
+Headers, lengths, and markers detect malformed input and many accidental
+mismatches. They do not identify the producer or prevent deliberate rewriting.
+See [SECURITY.md](./SECURITY.md).

@@ -1,127 +1,226 @@
-import { randomSalt } from "./core/utils.js";
-import { normalizeFiseRules } from "./core/normalizeFiseRules.js";
-import { DEFAULT_SALT_RANGE, DUMMY_CHAR } from "./core/constants.js";
-import { EncryptOptions, DecryptOptions, FiseCipher, FiseContext, FiseRules } from "./types.js";
-import { xorCipher } from "./core/xorCipher.js";
+import { randomIntegerInclusive, randomSalt } from "./core/utils.js";
+import {
+	NormalizedStringProfile,
+	normalizeStringProfile
+} from "./core/profileValidation.js";
+import {
+	assertEnvelopeLength,
+	assertEnvelopeLimit,
+	assertEnvelopeProfile,
+	encodeStringEnvelopeHeader,
+	parseStringEnvelopeHeader
+} from "./core/envelopeV11.js";
+import {
+	DecryptOptions,
+	EncryptOptions,
+	FiseLayoutInput,
+	FiseStringProfile
+} from "./types.js";
+import { normalizeOffset } from "./core/normalizeOffset.js";
+import { FiseError } from "./errors.js";
+import { assertStringValue } from "./core/valueValidation.js";
 
 /**
- * Encrypts plaintext string using FISE transformation.
+ * Creates a versioned FISE 1.1 string envelope with one atomic profile.
  *
- * For binary data encryption, use `fiseBinaryEncrypt()` instead.
- *
- * @param plaintext - The string to encrypt
- * @param rules - The rules implementation that defines encoding/offset behavior.
- *                Only requires offset, encodeLength, and decodeLength (3 security points).
- *                Everything else is optional and will be automated.
- * @param options - Optional encryption options (timestamp, metadata, cipher).
- *                  Defaults to xorCipher if cipher is not specified.
- * @returns The encrypted envelope string
- *
+ * @remarks The built-in profile creates a reversible representation. It does
+ * not provide cryptographic confidentiality, authenticity, or integrity.
  */
 export function fiseEncrypt(
 	plaintext: string,
-	rules: FiseRules<string>,
+	profile: FiseStringProfile,
 	options: EncryptOptions = {}
 ): string {
-	const cipher = options.cipher ?? xorCipher;
-	// Normalize rules to fill in optional methods with defaults
-	const fullRules = normalizeFiseRules(rules);
+	assertStringValue(plaintext, "plaintext", "INVALID_INPUT");
+	const normalized = normalizeStringProfile(profile, options);
+	const saltLength = randomIntegerInclusive(
+		normalized.saltRange.min,
+		normalized.saltRange.max
+	);
+	return assembleStringEnvelope(plaintext, randomSalt(saltLength), normalized);
+}
 
-	// Use salt range from rules (default from constants)
-	const saltRange = rules.saltRange ?? DEFAULT_SALT_RANGE;
-	const timestamp = options.timestamp;
-
-	const range = saltRange.max - saltRange.min + 1;
-	const saltLen =
-		saltRange.min + Math.floor(Math.random() * Math.max(range, 1));
-
-	const salt = randomSalt(saltLen);
-	const ctx: FiseContext = {
-		timestamp,
-		saltLength: saltLen,
-		metadata: options.metadata
-	};
-
-	const cipherText = cipher.encrypt(plaintext, salt);
-	const encodedLen = fullRules.encodeLength(saltLen, ctx);
-	const offsetRaw = fullRules.offset(cipherText, ctx);
-
-	const offset = Math.max(0, Math.min(offsetRaw, cipherText.length));
-
-	const withLen =
-		cipherText.slice(0, offset) + encodedLen + cipherText.slice(offset);
-
-	return withLen + salt;
+/** @internal Used only by the deterministic conformance entry point. */
+export function fiseEncryptWithSalt(
+	plaintext: string,
+	salt: string,
+	profile: FiseStringProfile,
+	options: EncryptOptions = {}
+): string {
+	assertStringValue(plaintext, "plaintext", "INVALID_INPUT");
+	assertStringValue(salt, "salt", "INVALID_SALT");
+	return assembleStringEnvelope(
+		plaintext,
+		salt,
+		normalizeStringProfile(profile, options)
+	);
 }
 
 /**
- * Decrypts a FISE envelope string back to plaintext.
+ * Validates and reverses only the versioned FISE 1.1 string format.
  *
- * For binary data decryption, use `fiseBinaryDecrypt()` instead.
- *
- * @param envelope - The encrypted envelope string
- * @param rules - The rules implementation that matches the one used for encryption
- * @param options - Optional decryption options (timestamp, metadata, cipher).
- *                  Defaults to xorCipher if cipher is not specified.
- *                  Timestamp and metadata must match encryption.
- * @returns The decrypted plaintext string
- * @throws Error if the envelope cannot be decoded or if timestamp/metadata doesn't match
- *
+ * @remarks The operational name does not imply that the envelope was
+ * cryptographically confidential or authenticated.
  */
 export function fiseDecrypt(
 	envelope: string,
-	rules: FiseRules<string>,
+	profile: FiseStringProfile,
 	options: DecryptOptions = {}
 ): string {
-	const cipher = options.cipher ?? xorCipher;
-	// Normalize rules to fill in optional methods with defaults
-	const fullRules = normalizeFiseRules(rules);
+	assertStringValue(envelope, "envelope", "INVALID_ENVELOPE");
+	const normalized = normalizeStringProfile(profile, options);
+	assertEnvelopeLimit(envelope.length, normalized.maxEnvelopeLength);
+	const header = parseStringEnvelopeHeader(envelope);
+	assertEnvelopeProfile(header.profileId, normalized.id);
+	assertSaltLengthAllowed(header.saltLength, normalized, "INVALID_ENVELOPE");
 
-	const ctx: FiseContext = {
-		timestamp: options.timestamp,
-		metadata: options.metadata
+	const expectedLength =
+		header.headerLength +
+		header.transformedLength +
+		normalized.markerSize +
+		header.saltLength;
+	assertEnvelopeLength(envelope.length, expectedLength);
+
+	const layoutInput: FiseLayoutInput = {
+		transformedLength: header.transformedLength,
+		saltLength: header.saltLength
 	};
+	const markerPosition = createStringOffset(normalized, layoutInput);
+	const bodyStart = header.headerLength;
+	const markerStart = bodyStart + markerPosition;
+	const markerEnd = markerStart + normalized.markerSize;
+	const actualMarker = envelope.slice(markerStart, markerEnd);
+	const expectedMarker = createStringMarker(normalized, layoutInput);
+	if (actualMarker !== expectedMarker) throw markerMismatch();
 
-	const { saltLength, encodedLength, withoutLen } = fullRules.preExtractLength(
-		envelope,
-		ctx
+	const saltStart =
+		header.headerLength + header.transformedLength + normalized.markerSize;
+	const salt = envelope.slice(saltStart);
+	const transformed =
+		envelope.slice(bodyStart, markerStart) + envelope.slice(markerEnd, saltStart);
+	const plaintext = runStringTransform(
+		"decrypt",
+		normalized,
+		transformed,
+		salt
 	);
+	assertStringValue(plaintext, "string transform output", "INVALID_CIPHERTEXT");
+	return plaintext;
+}
 
-	// For string operations, encodedLength and withoutLen are always strings
-	const encodedLengthStr = encodedLength as string;
-	const withoutLenStr = withoutLen as string;
-
-	const salt = fullRules.extractSalt(envelope, saltLength, {
-		...ctx,
-		saltLength
-	});
-
-	// Optimize: Calculate offset directly (O(1)) instead of searching (O(n²))
-	// Note: For defaultRules, offset only depends on length, not content
-	const encodedSize = fullRules.encodedLengthSize;
-	const ctxWithSalt = { ...ctx, saltLength };
-	const cipherTextLen = withoutLenStr.length - encodedSize;
-	const expectedOffset = fullRules.offset(
-		DUMMY_CHAR.repeat(Math.max(1, cipherTextLen)),
-		ctxWithSalt
+function assembleStringEnvelope(
+	plaintext: string,
+	salt: string,
+	normalized: NormalizedStringProfile
+): string {
+	assertSaltLengthAllowed(salt.length, normalized, "INVALID_SALT");
+	const transformed = runStringTransform(
+		"encrypt",
+		normalized,
+		plaintext,
+		salt
 	);
-	const encodedPos = Math.max(0, Math.min(expectedOffset, cipherTextLen));
+	assertStringValue(transformed, "string transform output", "INVALID_CIPHERTEXT");
+	const layoutInput: FiseLayoutInput = {
+		transformedLength: transformed.length,
+		saltLength: salt.length
+	};
+	const marker = createStringMarker(normalized, layoutInput);
+	const offset = createStringOffset(normalized, layoutInput);
+	const header = encodeStringEnvelopeHeader(
+		normalized.id,
+		salt.length,
+		transformed.length
+	);
+	assertEnvelopeLimit(
+		header.length + transformed.length + marker.length + salt.length,
+		normalized.maxEnvelopeLength
+	);
+	return (
+		header +
+		transformed.slice(0, offset) +
+		marker +
+		transformed.slice(offset) +
+		salt
+	);
+}
 
-	if (
-		encodedPos + encodedSize > withoutLenStr.length ||
-		withoutLenStr.slice(encodedPos, encodedPos + encodedSize) !== encodedLengthStr
-	) {
-		throw new Error(
-			"FISE: cannot find encoded length at expected offset. " +
-			"This may indicate a corrupted envelope, mismatched rules/timestamp, " +
-			"or a rules implementation where offset depends on content (not just length)."
+function createStringMarker(
+	normalized: NormalizedStringProfile,
+	input: FiseLayoutInput
+): string {
+	let marker: string;
+	try {
+		marker = normalized.profile.layout.createMarker(input, normalized.context);
+	} catch (error) {
+		if (error instanceof FiseError) throw error;
+		throw new FiseError(
+			"INVALID_PROFILE",
+			"FISE: string profile marker generation failed.",
+			error
 		);
 	}
+	if (typeof marker !== "string" || marker.length !== normalized.markerSize) {
+		throw new FiseError(
+			"INVALID_PROFILE",
+			"FISE: string profile marker does not match markerSize."
+		);
+	}
+	return marker;
+}
 
-	const cipherText =
-		withoutLenStr.slice(0, encodedPos) + withoutLenStr.slice(encodedPos + encodedSize);
+function createStringOffset(
+	normalized: NormalizedStringProfile,
+	input: FiseLayoutInput
+): number {
+	let offset: number;
+	try {
+		offset = normalized.profile.layout.offset(input, normalized.context);
+	} catch (error) {
+		if (error instanceof FiseError) throw error;
+		throw new FiseError(
+			"INVALID_PROFILE",
+			"FISE: string profile offset calculation failed.",
+			error
+		);
+	}
+	return normalizeOffset(offset, input.transformedLength);
+}
 
-	const decrypted = cipher.decrypt(cipherText, salt);
+function runStringTransform(
+	operation: "encrypt" | "decrypt",
+	normalized: NormalizedStringProfile,
+	input: string,
+	salt: string
+): string {
+	try {
+		return normalized.profile.transform[operation](input, salt);
+	} catch (error) {
+		if (error instanceof FiseError) throw error;
+		throw new FiseError(
+			"INVALID_CIPHERTEXT",
+			`FISE: string transform ${operation} operation failed.`,
+			error
+		);
+	}
+}
 
-	return decrypted;
+function assertSaltLengthAllowed(
+	saltLength: number,
+	profile: NormalizedStringProfile,
+	code: "INVALID_SALT" | "INVALID_ENVELOPE"
+): void {
+	if (saltLength < profile.saltRange.min || saltLength > profile.saltRange.max) {
+		throw new FiseError(
+			code,
+			`FISE: salt length ${saltLength} is outside profile range ${profile.saltRange.min}-${profile.saltRange.max}.`
+		);
+	}
+}
+
+function markerMismatch(): FiseError {
+	return new FiseError(
+		"MARKER_MISMATCH",
+		"FISE: profile marker does not match the versioned envelope header and context."
+	);
 }

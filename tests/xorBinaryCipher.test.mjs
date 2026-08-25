@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert";
 import { xorBinaryCipher, randomSaltBinary, fiseBinaryEncrypt, fiseBinaryDecrypt } from "../dist/index.js";
-import { defaultBinaryRules } from "../dist/index.js";
+import { defaultBinaryProfile } from "../dist/index.js";
 
 // Helper to convert string to Uint8Array
 function stringToUint8Array(str) {
@@ -139,8 +139,8 @@ test("xorBinaryCipher - output is binary (Uint8Array)", () => {
 test("xorBinaryCipher - integration with fiseBinaryEncrypt/fiseBinaryDecrypt", () => {
 	const binaryData = new Uint8Array([72, 101, 108, 108, 111, 32, 87, 111, 114, 108, 100]); // "Hello World"
 
-	const encrypted = fiseBinaryEncrypt(binaryData, defaultBinaryRules);
-	const decrypted = fiseBinaryDecrypt(encrypted, defaultBinaryRules);
+	const encrypted = fiseBinaryEncrypt(binaryData, defaultBinaryProfile);
+	const decrypted = fiseBinaryDecrypt(encrypted, defaultBinaryProfile);
 
 	assert.deepStrictEqual(decrypted, binaryData);
 });

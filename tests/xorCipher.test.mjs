@@ -53,6 +53,17 @@ test("xorCipher - empty string", () => {
 	assert.strictEqual(decrypted, plaintext);
 });
 
+test("xorCipher - rejects an empty salt for non-empty input", () => {
+	assert.throws(
+		() => xorCipher.encrypt("a", ""),
+		/FISE: string XOR salt must not be empty/
+	);
+	assert.throws(
+		() => xorCipher.decrypt("YQ==", ""),
+		/FISE: string XOR salt must not be empty/
+	);
+});
+
 test("xorCipher - long string", () => {
 	const plaintext = "A".repeat(1000);
 	const salt = "mysalt123";
@@ -91,6 +102,22 @@ test("xorCipher - unicode characters", () => {
 	const decrypted = xorCipher.decrypt(encrypted, salt);
 
 	assert.strictEqual(decrypted, plaintext);
+});
+
+test("xorCipher - preserves every UTF-16 code unit, including lone surrogates", () => {
+	const plaintext = "\u0000\ud800A\udfff\uffff";
+	const salt = "\ud801salt";
+	const encrypted = xorCipher.encrypt(plaintext, salt);
+	assert.strictEqual(xorCipher.decrypt(encrypted, salt), plaintext);
+});
+
+test("xorCipher - rejects malformed base64 and incomplete UTF-16 units", () => {
+	assert.throws(() => xorCipher.decrypt("not base64", "salt"), {
+		code: "INVALID_CIPHERTEXT"
+	});
+	assert.throws(() => xorCipher.decrypt("AA==", "salt"), {
+		code: "INVALID_CIPHERTEXT"
+	});
 });
 
 test("xorCipher - special characters", () => {

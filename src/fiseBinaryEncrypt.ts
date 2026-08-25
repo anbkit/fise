@@ -1,152 +1,273 @@
-import { randomSaltBinary } from "./core/utils.js";
-import { normalizeFiseRulesBinary } from "./core/normalizeBinaryFiseRules.js";
-import { DEFAULT_SALT_RANGE } from "./core/constants.js";
-import { EncryptOptions, DecryptOptions, FiseBinaryCipher, FiseContext, FiseRules } from "./types.js";
-import { xorBinaryCipher } from "./core/xorBinaryCipher.js";
+import { randomIntegerInclusive, randomSaltBinary } from "./core/utils.js";
+import {
+	NormalizedBinaryProfile,
+	normalizeBinaryProfile
+} from "./core/profileValidation.js";
+import {
+	assertEnvelopeLength,
+	assertEnvelopeLimit,
+	assertEnvelopeProfile,
+	encodeBinaryEnvelopeHeader,
+	parseBinaryEnvelopeHeader
+} from "./core/envelopeV11.js";
+import {
+	DecryptOptions,
+	EncryptOptions,
+	FiseBinaryProfile,
+	FiseLayoutInput
+} from "./types.js";
+import { normalizeOffset } from "./core/normalizeOffset.js";
+import { FiseError } from "./errors.js";
+import { assertUint8ArrayValue } from "./core/valueValidation.js";
 
 /**
- * Encrypts binary data using FISE transformation with binary envelope.
- * 
- * **Rules Sharing**: You can use the same rules for both string and binary encryption.
- * 
- * @param binaryData - The binary data to encrypt (Uint8Array)
- * @param rules - The rules implementation (can be shared with string encryption).
- *                If rules use text-based encodeLength, they will be automatically converted to binary.
- *                For best performance, use binary-native rules (e.g., defaultBinaryRules).
- * @param options - Optional encryption options (timestamp, metadata, binaryCipher).
- *                  Defaults to xorBinaryCipher if binaryCipher is not specified.
- * @returns The encrypted envelope as Uint8Array (pure binary, no base64)
+ * Creates a versioned FISE 1.1 binary envelope with one atomic profile.
+ *
+ * @remarks The built-in profile creates a reversible representation. It does
+ * not provide cryptographic confidentiality, authenticity, or integrity.
  */
 export function fiseBinaryEncrypt(
-    binaryData: Uint8Array,
-    rules: FiseRules<string | Uint8Array>,
-    options: EncryptOptions = {}
+	input: Uint8Array,
+	profile: FiseBinaryProfile,
+	options: EncryptOptions = {}
 ): Uint8Array {
-    const cipher = options.binaryCipher ?? xorBinaryCipher;
-    // Normalize rules
-    const fullRules = normalizeFiseRulesBinary(rules);
+	return fiseBinaryEncryptNormalized(
+		input,
+		normalizeBinaryProfile(profile, options)
+	);
+}
 
-    // Use salt range from rules (default from constants)
-    const saltRange = rules.saltRange ?? DEFAULT_SALT_RANGE;
-    const timestamp = options.timestamp;
+/** @internal Encrypts with one already-owned runtime profile snapshot. */
+export function fiseBinaryEncryptNormalized(
+	input: Uint8Array,
+	normalized: NormalizedBinaryProfile
+): Uint8Array {
+	assertUint8ArrayValue(input, "binary input", "INVALID_INPUT");
+	const saltLength = randomIntegerInclusive(
+		normalized.saltRange.min,
+		normalized.saltRange.max
+	);
+	return assembleBinaryEnvelope(
+		input,
+		randomSaltBinary(saltLength),
+		normalized
+	);
+}
 
-    const range = saltRange.max - saltRange.min + 1;
-    const saltLen =
-        saltRange.min + Math.floor(Math.random() * Math.max(range, 1));
-
-    // Generate salt as Uint8Array
-    const salt = randomSaltBinary(saltLen);
-
-    const ctx: FiseContext = {
-        timestamp,
-        saltLength: saltLen,
-        metadata: options.metadata
-    };
-
-    // Encrypt binary data
-    const cipherText = cipher.encrypt(binaryData, salt);
-
-    // Encode salt length as binary
-    const encodedLen = fullRules.encodeLength(saltLen, ctx);
-    if (!(encodedLen instanceof Uint8Array)) {
-        throw new Error("FISE: encodeLength must return Uint8Array for binary envelopes");
-    }
-
-    // Calculate offset (works on byte length)
-    const offsetRaw = fullRules.offset(cipherText, ctx);
-    const offset = Math.max(0, Math.min(offsetRaw, cipherText.length));
-
-    // Assemble envelope: [cipherText[0:offset], encodedLen, cipherText[offset:], salt]
-    const totalSize = cipherText.length + encodedLen.length + salt.length;
-    const envelope = new Uint8Array(totalSize);
-    let pos = 0;
-
-    // Copy cipherText prefix
-    envelope.set(cipherText.slice(0, offset), pos);
-    pos += offset;
-
-    // Copy encoded length
-    envelope.set(encodedLen, pos);
-    pos += encodedLen.length;
-
-    // Copy cipherText suffix
-    envelope.set(cipherText.slice(offset), pos);
-    pos += cipherText.length - offset;
-
-    // Copy salt
-    envelope.set(salt, pos);
-
-    return envelope;
+/** @internal Used only by the deterministic conformance entry point. */
+export function fiseBinaryEncryptWithSalt(
+	input: Uint8Array,
+	salt: Uint8Array,
+	profile: FiseBinaryProfile,
+	options: EncryptOptions = {}
+): Uint8Array {
+	assertUint8ArrayValue(input, "binary input", "INVALID_INPUT");
+	assertUint8ArrayValue(salt, "binary salt", "INVALID_SALT");
+	return assembleBinaryEnvelope(
+		input,
+		salt,
+		normalizeBinaryProfile(profile, options)
+	);
 }
 
 /**
- * Decrypts a binary FISE envelope back to binary data.
- * 
- * **Rules Sharing**: You can use the same rules for both string and binary decryption.
- * 
- * @param envelope - The encrypted envelope as Uint8Array (pure binary)
- * @param rules - The rules implementation that matches the one used for encryption.
- *                Can be shared with string decryption - normalization handles adaptation.
- * @param options - Optional decryption options (timestamp, metadata, binaryCipher).
- *                  Defaults to xorBinaryCipher if binaryCipher is not specified.
- *                  Timestamp and metadata must match encryption.
- * @returns The decrypted binary data (Uint8Array)
- * 
+ * Validates and reverses only the versioned FISE 1.1 binary format.
+ *
+ * @remarks The operational name does not imply that the envelope was
+ * cryptographically confidential or authenticated.
  */
 export function fiseBinaryDecrypt(
-    envelope: Uint8Array,
-    rules: FiseRules<string | Uint8Array>,
-    options: DecryptOptions = {}
+	envelope: Uint8Array,
+	profile: FiseBinaryProfile,
+	options: DecryptOptions = {}
 ): Uint8Array {
-    const cipher = options.binaryCipher ?? xorBinaryCipher;
-    // Normalize rules
-    const fullRules = normalizeFiseRulesBinary(rules);
+	return fiseBinaryDecryptNormalized(
+		envelope,
+		normalizeBinaryProfile(profile, options)
+	);
+}
 
-    const ctx: FiseContext = {
-        timestamp: options.timestamp,
-        metadata: options.metadata
-    };
+/** @internal Decrypts with one already-owned runtime profile snapshot. */
+export function fiseBinaryDecryptNormalized(
+	envelope: Uint8Array,
+	normalized: NormalizedBinaryProfile
+): Uint8Array {
+	assertUint8ArrayValue(envelope, "binary envelope", "INVALID_ENVELOPE");
+	assertEnvelopeLimit(envelope.length, normalized.maxEnvelopeLength);
+	const header = parseBinaryEnvelopeHeader(envelope);
+	assertEnvelopeProfile(header.profileId, normalized.id);
+	assertSaltLengthAllowed(header.saltLength, normalized, "INVALID_ENVELOPE");
 
-    // Extract salt length and encoded length
-    const { saltLength, encodedLength, withoutLen } = fullRules.preExtractLength(envelope, ctx);
+	const expectedLength =
+		header.headerLength +
+		header.transformedLength +
+		normalized.markerSize +
+		header.saltLength;
+	assertEnvelopeLength(envelope.length, expectedLength);
 
-    // For binary operations, encodedLength and withoutLen are always Uint8Array
-    const encodedLengthBinary = encodedLength as Uint8Array;
-    const withoutLenBinary = withoutLen as Uint8Array;
+	const layoutInput: FiseLayoutInput = {
+		transformedLength: header.transformedLength,
+		saltLength: header.saltLength
+	};
+	const markerPosition = createBinaryOffset(normalized, layoutInput);
+	const bodyStart = header.headerLength;
+	const markerStart = bodyStart + markerPosition;
+	const markerEnd = markerStart + normalized.markerSize;
+	const actualMarker = envelope.subarray(markerStart, markerEnd);
+	const expectedMarker = createBinaryMarker(normalized, layoutInput);
+	if (!bytesEqual(actualMarker, expectedMarker)) throw markerMismatch();
 
-    const salt = fullRules.extractSalt(envelope, saltLength, {
-        ...ctx,
-        saltLength
-    }) as Uint8Array;
+	const saltStart =
+		header.headerLength + header.transformedLength + normalized.markerSize;
+	const salt = envelope.subarray(saltStart);
+	const transformed = new Uint8Array(header.transformedLength);
+	transformed.set(envelope.subarray(bodyStart, markerStart), 0);
+	transformed.set(envelope.subarray(markerEnd, saltStart), markerPosition);
+	const plaintext = runBinaryTransform(
+		"decrypt",
+		normalized,
+		transformed,
+		salt
+	);
+	assertUint8ArrayValue(plaintext, "binary transform output", "INVALID_CIPHERTEXT");
+	return plaintext;
+}
 
-    // Calculate offset
-    const encodedSize = fullRules.encodedLengthSize;
-    const ctxWithSalt = { ...ctx, saltLength };
-    const cipherTextLen = withoutLenBinary.length - encodedSize;
-    const expectedOffset = fullRules.offset(
-        new Uint8Array(Math.max(1, cipherTextLen)),
-        ctxWithSalt
-    );
-    const encodedPos = Math.max(0, Math.min(expectedOffset, cipherTextLen));
+function assembleBinaryEnvelope(
+	input: Uint8Array,
+	salt: Uint8Array,
+	normalized: NormalizedBinaryProfile
+): Uint8Array {
+	assertSaltLengthAllowed(salt.length, normalized, "INVALID_SALT");
+	const transformed = runBinaryTransform(
+		"encrypt",
+		normalized,
+		input,
+		salt
+	);
+	assertUint8ArrayValue(transformed, "binary transform output", "INVALID_CIPHERTEXT");
+	const layoutInput: FiseLayoutInput = {
+		transformedLength: transformed.length,
+		saltLength: salt.length
+	};
+	const marker = createBinaryMarker(normalized, layoutInput);
+	const offset = createBinaryOffset(normalized, layoutInput);
+	const header = encodeBinaryEnvelopeHeader(
+		normalized.id,
+		salt.length,
+		transformed.length
+	);
+	const envelopeLength =
+		header.length + transformed.length + marker.length + salt.length;
+	assertEnvelopeLimit(envelopeLength, normalized.maxEnvelopeLength);
+	let envelope: Uint8Array;
+	try {
+		envelope = new Uint8Array(envelopeLength);
+	} catch (error) {
+		throw new FiseError(
+			"ENVELOPE_LIMIT",
+			`FISE: unable to allocate a binary envelope of length ${envelopeLength}.`,
+			error
+		);
+	}
+	let position = 0;
+	envelope.set(header, position);
+	position += header.length;
+	envelope.set(transformed.subarray(0, offset), position);
+	position += offset;
+	envelope.set(marker, position);
+	position += marker.length;
+	envelope.set(transformed.subarray(offset), position);
+	position += transformed.length - offset;
+	envelope.set(salt, position);
+	return envelope;
+}
 
-    // Verify encoded length matches
-    const actualEncoded = withoutLenBinary.slice(encodedPos, encodedPos + encodedSize);
-    if (encodedPos + encodedSize > withoutLenBinary.length ||
-        !actualEncoded.every((b, i) => b === encodedLengthBinary[i])) {
-        throw new Error(
-            "FISE: cannot find encoded length at expected offset. " +
-            "This may indicate a corrupted envelope, mismatched rules/timestamp, " +
-            "or a rules implementation where offset depends on content (not just length)."
-        );
-    }
+function createBinaryMarker(
+	normalized: NormalizedBinaryProfile,
+	input: FiseLayoutInput
+): Uint8Array {
+	let marker: Uint8Array;
+	try {
+		marker = normalized.profile.layout.createMarker(input, normalized.context);
+	} catch (error) {
+		if (error instanceof FiseError) throw error;
+		throw new FiseError(
+			"INVALID_PROFILE",
+			"FISE: binary profile marker generation failed.",
+			error
+		);
+	}
+	assertUint8ArrayValue(marker, "binary profile marker", "INVALID_PROFILE");
+	if (marker.length !== normalized.markerSize) {
+		throw new FiseError(
+			"INVALID_PROFILE",
+			"FISE: binary profile marker does not match markerSize."
+		);
+	}
+	return marker;
+}
 
-    // Extract ciphertext
-    const cipherText = new Uint8Array(cipherTextLen);
-    cipherText.set(withoutLenBinary.slice(0, encodedPos), 0);
-    cipherText.set(withoutLenBinary.slice(encodedPos + encodedSize), encodedPos);
+function createBinaryOffset(
+	normalized: NormalizedBinaryProfile,
+	input: FiseLayoutInput
+): number {
+	let offset: number;
+	try {
+		offset = normalized.profile.layout.offset(input, normalized.context);
+	} catch (error) {
+		if (error instanceof FiseError) throw error;
+		throw new FiseError(
+			"INVALID_PROFILE",
+			"FISE: binary profile offset calculation failed.",
+			error
+		);
+	}
+	return normalizeOffset(offset, input.transformedLength);
+}
 
-    // Decrypt
-    const decrypted = cipher.decrypt(cipherText, salt);
+function runBinaryTransform(
+	operation: "encrypt" | "decrypt",
+	normalized: NormalizedBinaryProfile,
+	input: Uint8Array,
+	salt: Uint8Array
+): Uint8Array {
+	try {
+		return normalized.profile.transform[operation](input, salt);
+	} catch (error) {
+		if (error instanceof FiseError) throw error;
+		throw new FiseError(
+			"INVALID_CIPHERTEXT",
+			`FISE: binary transform ${operation} operation failed.`,
+			error
+		);
+	}
+}
 
-    return decrypted;
+function assertSaltLengthAllowed(
+	saltLength: number,
+	profile: NormalizedBinaryProfile,
+	code: "INVALID_SALT" | "INVALID_ENVELOPE"
+): void {
+	if (saltLength < profile.saltRange.min || saltLength > profile.saltRange.max) {
+		throw new FiseError(
+			code,
+			`FISE: salt length ${saltLength} is outside profile range ${profile.saltRange.min}-${profile.saltRange.max}.`
+		);
+	}
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array): boolean {
+	if (left.length !== right.length) return false;
+	for (let index = 0; index < left.length; index++) {
+		if (left[index] !== right[index]) return false;
+	}
+	return true;
+}
+
+function markerMismatch(): FiseError {
+	return new FiseError(
+		"MARKER_MISMATCH",
+		"FISE: profile marker does not match the versioned envelope header and context."
+	);
 }
