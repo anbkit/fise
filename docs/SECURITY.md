@@ -1,4 +1,8 @@
-# FISE 1.1 Security Boundary
+# FISE Security Boundary
+
+This boundary applies to package `1.2.0`. Package releases evolve independently
+from the wire contracts: ordinary envelopes use FISE wire `1.1`, and framed
+containers use FISF wire `1.0`.
 
 ## Meaning of `encrypt`
 
@@ -27,11 +31,11 @@ described as a client-side secret.
 
 ## Property matrix
 
-| Property | FISE 1.1 framing | Built-in XOR | Required control |
+| Property | FISE wire 1.1 framing | Built-in XOR | Required control |
 | --- | --- | --- | --- |
 | Version/profile compatibility | Yes | N/A | FISE header/profile |
 | Truncation/trailing-data detection | Yes | N/A | Exact length checks |
-| Framed index contiguity/count/selected inner validation | Yes for `FISF` structure | N/A | Framed parser plus selected 1.1 decoder |
+| Framed index contiguity/count/selected inner validation | Yes for `FISF` structure | N/A | Framed parser plus selected FISE wire 1.1 decoder |
 | Context/layout mismatch that changes marker value or location | Partial | N/A | Profile layout |
 | Same-length payload or salt mutation | No | No | MAC, AEAD, signature, or application validation |
 | Network confidentiality | No | No | TLS |
@@ -74,10 +78,10 @@ plaintext JSON/bytes. It cannot keep client-visible payloads secret from the
 client, and an empirical deployment may observe little additional cost when
 the official restoration path is easy to hook.
 
-## Improvements delivered by 1.1
+## Improvements introduced with wire protocol 1.1
 
-The 1.1 changes improve engineering safety without inflating the cryptographic
-claim:
+The wire protocol 1.1 changes improve engineering safety without inflating the
+cryptographic claim:
 
 - atomic profiles prevent transform/layout mix-and-match;
 - exact version, profile, and length fields remove heuristic candidate scans;
