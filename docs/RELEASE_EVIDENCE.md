@@ -22,6 +22,32 @@ Every external release record should include:
 - package file count/size and empty-consumer checks; and
 - explicit exclusions such as untested browsers, devices, CSP, or hosted CI.
 
+## Working-tree snapshot — 2026-08-26
+
+- Base commit: `e4e58a606d62c6f07ad7349bf2b71cb511ddf777`
+- State: dirty, unpublished FISE `1.1.0` working tree
+- Host: macOS 26.5.2 arm64
+
+| Gate | Environment | Result | Boundary |
+| --- | --- | --- | --- |
+| Full release gate | Node `v22.14.0`, npm `10.9.2` | Pass; 189/189 Node tests, 8/8 packed public examples, 4/4 Python tests, 20 linked Markdown documents, public types/package, and empty-consumer tarball | Local dirty tree; Node 20 and hosted CI not rerun for these additions |
+| Async worker backend | Node `v22.14.0` worker threads | Pass; absolute salt-offset parity, sync/async ordinary-wire cross-decode, threshold, reserved identity, cancellation, close, packed install | Functional/conformance evidence; no throughput or responsiveness claim |
+| Framed binary | Node `v22.14.0` | Pass; canonical `FISF` vector, empty/full/range/progressive, selected-frame failure boundary, malformed index/version/range/bounds, worker composition | Complete in-memory container; no HTTP range, streaming input, or lazy JSON claim |
+| Packed consumer | Node `v22.14.0`, npm `10.9.2` | Pass; 99 package entries; root/subpath imports plus JS, WASM, worker, framed, examples, and reference checks | Generated working-tree tarball; final digest belongs in the external release record |
+| Packed-browser smoke | Headed Chrome `151.0.0.0` | Pass; exact page status `PASS: packed manifest + time window + CSP + HTTP + string + JS/WASM/worker + framed range/progressive`; 31/31 HTTP 200 including two worker-module loads; 0 console errors/warnings | Installed working-tree tarball under same-origin module/worker plus WASM CSP; not Firefox, WebKit, mobile, or deployed CSP |
+
+The browser run used `worker-src 'self'` and loaded
+`dist/workers/xorWorker.js` twice for a two-worker pool. It exercised ordinary
+async 1.1 interoperability plus framed full/range/progressive restoration. The
+tarball was generated immediately before this evidence text was updated; as
+with the digest self-reference described above, final release identity must be
+recorded externally after the tracked content stops changing.
+
+No worker startup/transfer crossover, aggregate-throughput comparison,
+main-thread responsiveness, remote-range, incremental-input, or lazy-JSON
+benchmark was run. The added browser result is one Chromium-family runtime, not
+a broader support matrix.
+
 ## Working-tree snapshot — 2026-08-25
 
 - Base commit: `38a645eb6a2df5e9bff3c00d3f14dd0003beafb4`
@@ -76,6 +102,7 @@ tracked package content afterward:
 
 ```sh
 npm test
+npm run verify:examples
 npm run verify:interop
 npm run verify:package
 npm run verify:packed

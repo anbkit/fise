@@ -1,18 +1,32 @@
 import {
 	defaultBinaryProfile,
 	defaultStringProfile,
+	createParallelXorBinaryCipher,
 	createWasmXorBinaryCipher,
 	defineStringProfile,
 	fiseBinaryDecrypt,
 	fiseBinaryEncrypt,
+	fiseBinaryDecryptAsync,
+	fiseBinaryEncryptAsync,
 	fiseDecrypt,
 	fiseEncrypt,
+	fiseFramedBinaryDecrypt,
+	fiseFramedBinaryDecryptProgressive,
+	fiseFramedBinaryDecryptRange,
+	fiseFramedBinaryEncrypt,
+	resolveFiseTimeWindow,
 	xorCipher,
+	type FiseTimeWindow,
+	type FiseTimeWindowOptions,
+	type FiseBinaryRange,
+	type FiseFramedBinaryEncryptOptions,
+	type ParallelXorBinaryCipherOptions,
 	type FiseStringProfile,
 	type WasmXorBinaryCipherOptions
 } from "fise";
 import {
 	createBinaryConformanceEnvelope,
+	createFramedBinaryConformanceEnvelope,
 	createStringConformanceEnvelope
 } from "fise/conformance";
 import {
@@ -45,6 +59,9 @@ const binaryEnvelope = fiseBinaryEncrypt(new Uint8Array([1]), defaultBinaryProfi
 const binaryValue: Uint8Array = fiseBinaryDecrypt(binaryEnvelope, defaultBinaryProfile);
 const wasmOptions: WasmXorBinaryCipherOptions = { maxMemoryPages: 32 };
 void createWasmXorBinaryCipher(wasmOptions);
+const timeWindowOptions: FiseTimeWindowOptions = { durationMs: 60_000 };
+const timeWindow: FiseTimeWindow = resolveFiseTimeWindow(Date.now(), timeWindowOptions);
+fiseEncrypt("windowed", defaultStringProfile, { timestamp: timeWindow.timestamp });
 
 createStringConformanceEnvelope(
 	stringValue,
@@ -56,8 +73,54 @@ createBinaryConformanceEnvelope(
 	new Uint8Array(10),
 	defaultBinaryProfile
 );
+createFramedBinaryConformanceEnvelope(
+	binaryValue,
+	[new Uint8Array(10)],
+	defaultBinaryProfile,
+	{ frameSize: 1 }
+);
 
 async function verifySubpaths(): Promise<void> {
+	const parallelOptions: ParallelXorBinaryCipherOptions = {
+		workerCount: 2,
+		minimumParallelBytes: 1024
+	};
+	const parallel = await createParallelXorBinaryCipher(parallelOptions);
+	try {
+		const asyncEnvelope = await fiseBinaryEncryptAsync(
+			binaryValue,
+			defaultBinaryProfile,
+			{ backend: parallel }
+		);
+		await fiseBinaryDecryptAsync(asyncEnvelope, defaultBinaryProfile, {
+			backend: parallel
+		});
+		const framedOptions: FiseFramedBinaryEncryptOptions = {
+			frameSize: 1,
+			concurrency: 2,
+			backend: parallel
+		};
+		const framed = await fiseFramedBinaryEncrypt(
+			binaryValue,
+			defaultBinaryProfile,
+			framedOptions
+		);
+		await fiseFramedBinaryDecrypt(framed, defaultBinaryProfile);
+		const range: FiseBinaryRange = { start: 0, endExclusive: 1 };
+		await fiseFramedBinaryDecryptRange(
+			framed,
+			defaultBinaryProfile,
+			range
+		);
+		for await (const frame of fiseFramedBinaryDecryptProgressive(
+			framed,
+			defaultBinaryProfile
+		)) {
+			void frame;
+		}
+	} finally {
+		await parallel.close();
+	}
 	const compiled = await compileFiseProfileManifest({
 		schema: "fise.profile/1",
 		name: "types.consumer",

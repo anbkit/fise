@@ -4,11 +4,18 @@
 
 String and binary encode/decode are linear in transformed payload size. Header,
 profile, and marker work are bounded and do not scan the salt range. The
-non-streaming API allocates complete transformed and envelope buffers.
+ordinary-envelope API allocates complete transformed and envelope buffers.
 
 The string default expands each JavaScript UTF-16 code unit to two bytes, then
 base64. The binary default avoids base64 but still allocates an envelope and a
 restored output buffer.
+
+The worker backend also performs linear transform work, but copies owned chunks
+to dedicated workers and assembles one complete output. `FISF` framing adds one
+inner 1.1 envelope per frame plus an 8-byte index entry; range restore performs
+work proportional to the intersecting frames, not the requested boundary bytes
+alone. Progressive restore holds the complete outer container but limits
+transform/output work to one consumer-pulled frame at a time.
 
 ## Benchmarks
 
@@ -33,6 +40,9 @@ The WASM suite separates:
 
 The adaptation suite measures known-decoder runtime only. It is not a
 reverse-engineering benchmark; see [ADAPTATION_EVALUATION.md](./ADAPTATION_EVALUATION.md).
+
+No worker or framed crossover benchmark is currently recorded. Their functional
+tests are not performance evidence.
 
 ## Scoped reference run
 
@@ -88,6 +98,16 @@ varies from 10 through 99 bytes. The example sizes above are single generated
 envelopes; the formula, not one random salt sample, is the stable product
 property.
 
+For `F` frames, the outer framed size is:
+
+```text
+framedBytes = 24 + profileIdBytes + 8 * F + sum(innerEnvelopeBytes)
+```
+
+Each inner envelope pays the ordinary binary header/profile/marker/salt
+overhead. Frame size is therefore a range-granularity versus overhead decision,
+not a free streaming switch.
+
 ## Meaning of “Fast”
 
 “Fast” is a design objective supported only for named measurements. Version 1.1
@@ -106,6 +126,13 @@ not a support guarantee or universal WASM threshold.
 ## Expected tradeoffs
 
 - WASM initialization and copies can dominate small inputs.
+- Worker startup, message transfer, per-chunk copies, scheduling, and final
+  assembly can dominate small or moderate inputs; the configurable local
+  threshold is an execution policy, not a measured universal crossover.
+- A worker backend retains dedicated workers until `close()` and can improve
+  main-thread responsiveness without improving aggregate throughput.
+- Smaller framed chunks improve range granularity but increase random-salt,
+  header, marker, index, allocation, and scheduling overhead.
 - Backend binding runs four deterministic semantic cases once; do not bind a
   new profile inside a hot request loop.
 - Larger byte loops may benefit from WASM on some runtimes.
@@ -128,5 +155,6 @@ not a support guarantee or universal WASM threshold.
 - Prefer a worker when measurements show main-thread impact, then measure
   transfer and worker startup costs as well.
 
-Streaming, caller-owned output, and transferable-buffer APIs are future wire or
-ownership contracts; they are not silently implied by 1.1.
+Incremental transport input, direct HTTP range acquisition, lazy JSON,
+caller-owned output, and zero-copy transferable-buffer ownership remain future
+contracts. The existing worker and framed APIs do not silently imply them.

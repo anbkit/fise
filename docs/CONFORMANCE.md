@@ -37,11 +37,36 @@ Envelope hexadecimal:
 46495345010113000a00000006666973652e64656661756c742e62696e617279000a00000000fafa00010203040506070809
 ```
 
+## Canonical framed binary vector
+
+Inputs:
+
+```text
+container:    FISF 1.0
+profile:      fise.default.binary
+plaintextHex: 00010203feff
+frameSize:    4
+frame0Salt:   00010203040506070809
+frame1Salt:   0a0b0c0d0e0f10111213
+timestamp:    0
+```
+
+Container hexadecimal:
+
+```text
+464953460100001300000004000000060000000200080000666973652e64656661756c742e62696e6172790000003b000000300000006b0000002e46495345010113000a00000004666973652e64656661756c742e62696e617279000a000000000001020304050607080946495345010113000a00000002666973652e64656661756c742e62696e617279000af4f40a0b0c0d0e0f10111213
+```
+
+This vector fixes the outer header/index and two complete inner 1.1 envelopes.
+It is byte-level evidence for one fixture, not an independent second-language
+implementation of `FISF`.
+
 ## Fixture API
 
 ```ts
 import {
   createBinaryConformanceEnvelope,
+  createFramedBinaryConformanceEnvelope,
   createStringConformanceEnvelope
 } from "fise/conformance";
 
@@ -50,6 +75,15 @@ const envelope = createStringConformanceEnvelope(
   "0123456789",
   defaultStringProfile,
   { timestamp: 0 }
+);
+
+const frame0Salt = Uint8Array.from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+const frame1Salt = Uint8Array.from([10, 11, 12, 13, 14, 15, 16, 17, 18, 19]);
+const framed = createFramedBinaryConformanceEnvelope(
+  Uint8Array.from([0, 1, 2, 3, 254, 255]),
+  [frame0Salt, frame1Salt],
+  defaultBinaryProfile,
+  { frameSize: 4, timestamp: 0 }
 );
 ```
 
@@ -95,7 +129,12 @@ An alternate implementation should verify:
 8. stable typed errors rather than untyped parser exceptions; and
 9. deterministic canonical manifest digest, deep immutability, and rotation
    diff; and
-10. strict numeric manifest types plus WASM retained-page-cap boundaries.
+10. strict numeric manifest types plus WASM retained-page-cap boundaries;
+11. async worker parity at non-divisible salt/chunk boundaries, cancellation,
+    close, reserved transform identity, and ordinary-wire interoperability; and
+12. `FISF` magic/version, index contiguity, exact count/length, full/range/
+    progressive restoration, selected-frame failure, bounds, and the canonical
+    framed vector.
 
 ## Evidence boundary
 

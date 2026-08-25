@@ -16,6 +16,7 @@ integrity, anti-replay, authorization, or DRM.
 | --- | --- | --- | --- |
 | Version/profile compatibility | Yes | N/A | FISE header/profile |
 | Truncation/trailing-data detection | Yes | N/A | Exact length checks |
+| Framed index contiguity/count/selected inner validation | Yes for `FISF` structure | N/A | Framed parser plus selected 1.1 decoder |
 | Context/layout mismatch that changes marker value or location | Partial | N/A | Profile layout |
 | Same-length payload or salt mutation | No | No | MAC, AEAD, signature, or application validation |
 | Network confidentiality | No | No | TLS |
@@ -27,6 +28,12 @@ integrity, anti-replay, authorization, or DRM.
 
 “Partial” matters: marker width is finite, layout mappings can collide, and a
 party that knows the profile can rewrite all fields consistently.
+
+The framed index is also structural, not authenticated. A range restore
+validates the complete outer index and only the inner envelopes intersecting
+the requested range. An unselected malformed inner envelope can therefore be
+discovered later by a full or overlapping restore. This is selective work, not
+an integrity guarantee for the unselected payload.
 
 The marker depends on declared lengths and configured context, not on every
 payload or salt byte. It therefore cannot be assigned a general collision
@@ -66,9 +73,26 @@ claim:
 - canonical manifests, full digests, vectors, and rotation diffs make rollout
   identity reviewable; and
 - typed errors separate compatibility, malformed input, resource, and runtime
-  failures.
+  failures;
+- the dedicated-worker backend preserves the registered transform identity,
+  absolute salt position, caller-input ownership, cancellation, and explicit
+  lifecycle; and
+- `FISF` uses distinct magic/version negotiation, a bounded exact index, and
+  independent inner envelopes for selected range/progressive work.
 
 These are protocol robustness properties, not cryptographic secrecy.
+Workers do not hide code, salts, inputs, or outputs from a client-side attacker,
+and framed selective restore does not authenticate skipped frames.
+
+## Time-window boundary
+
+`resolveFiseTimeWindow` standardizes deterministic bucket arithmetic only. Its
+output is public external context, and the default profiles use only
+`timestamp % 11` when choosing the marker position. The helper does not
+establish a trusted current time, bind the timestamp into an authentication
+tag, expire an envelope, or prevent replay. Enforce freshness against
+authenticated application data or a protected server-side record when that
+property is required.
 
 ## Randomness
 
@@ -119,6 +143,10 @@ cannot prevent that browser from observing plaintext after decode.
 - Set profile, caller, and transport size bounds.
 - Keep standard authentication, authorization, quotas, and anomaly detection.
 - Test production CSP and WASM behavior in real target browsers.
+- When using workers, allow only the required module origin, close retained
+  pools, and measure startup/transfer/main-thread behavior on target devices.
+- Set separate `FISF` container, frame-count, and per-inner-envelope bounds;
+  choose frame size from measured range granularity and overhead.
 - Configure the WASM retained-page cap for the target device; the 64-MiB
   default is finite but is not a total-process memory limit.
 - Measure adaptation cost empirically and report its uncertainty.

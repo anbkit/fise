@@ -1,6 +1,10 @@
 import { fiseBinaryEncryptWithSalt } from "./fiseBinaryEncrypt.js";
 import { fiseEncryptWithSalt } from "./fiseEncrypt.js";
 import {
+	FiseFramedBinaryConformanceOptions,
+	fiseFramedBinaryEncryptWithSalts
+} from "./framedBinary.js";
+import {
 	EncryptOptions,
 	FiseBinaryProfile,
 	FiseStringProfile
@@ -28,3 +32,18 @@ export function createBinaryConformanceEnvelope(
 ): Uint8Array {
 	return fiseBinaryEncryptWithSalt(input, salt, profile, options);
 }
+
+/**
+ * Deterministic indexed-container equivalent. Provide one fixed salt for each
+ * frame; fixed salts remain fixture inputs and are not production controls.
+ */
+export function createFramedBinaryConformanceEnvelope(
+	input: Uint8Array,
+	salts: readonly Uint8Array[],
+	profile: FiseBinaryProfile,
+	options: FiseFramedBinaryConformanceOptions
+): Uint8Array {
+	return fiseFramedBinaryEncryptWithSalts(input, salts, profile, options);
+}
+
+export type { FiseFramedBinaryConformanceOptions } from "./framedBinary.js";

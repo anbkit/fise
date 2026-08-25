@@ -29,6 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `defineStringProfile()`, `defineBinaryProfile()`, and frozen default profiles.
+- `resolveFiseTimeWindow()` for deterministic half-open Unix-millisecond
+  windows with explicit duration/origin, safe-integer validation, and no hidden
+  clock or adjacent-window fallback.
+- Eight dependency-free runnable examples covering strings, binary data,
+  worker execution, framed range/progressive restoration, JSON/HTTP, time
+  windows, WASM backend policy, and profile rotation; release verification also
+  executes them from the installed npm tarball.
 - Canonical `fise.profile/1` compiler with normalized JSON, SHA-256, compact
   128-bit digest-prefix profile IDs, full-digest artifacts, exhaustive
   salt-range layout validation, and deterministic vectors.
@@ -41,6 +48,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   module, async initialization, isolated instance memory, configurable retained
   page cap, and explicit failure.
 - `isWasmXorBinaryCipherSupported()` runtime API-presence check.
+- `fiseBinaryEncryptAsync()` and `fiseBinaryDecryptAsync()` with strict backend
+  identity, caller-input snapshots, cancellation, and ordinary 1.1 wire parity.
+- `createParallelXorBinaryCipher()` with dedicated Node/browser module workers,
+  absolute salt-offset chunking, configurable worker count/local threshold,
+  typed startup/runtime failure, and explicit `close()` lifecycle.
+- Opt-in `FISF` framed binary 1.0 container with exact profile/count/length
+  header, contiguous absolute index, bounded independent inner 1.1 envelopes,
+  full restore, half-open range restore, and pull-driven progressive byte
+  restore.
+- Framed APIs consume a complete in-memory container and produce bytes; they do
+  not implement HTTP range fetching, streaming input, or lazy JSON parsing.
+  Selective range restore validates the outer container and selected frames,
+  not skipped inner envelopes.
+- Canonical deterministic `FISF` conformance helper/vector and malformed index,
+  selective-frame, range, cancellation, worker, packed-consumer, and real-
+  browser tests.
 - `withBinaryBackend()` with reserved built-in implementation identity and
   profile-range semantic checks.
 - JS/WASM byte parity, memory-growth, and cross-backend envelope tests.

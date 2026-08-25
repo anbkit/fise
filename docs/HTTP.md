@@ -41,6 +41,12 @@ Each helper captures one immutable profile/context snapshot before processing.
 Readers retain that same snapshot across asynchronous body consumption, so the
 media profile check and envelope decode cannot diverge through caller mutation.
 
+External context is not added to the media parameters. When a profile uses a
+time window, resolve it once from a request/session anchor and coordinate its
+integer timestamp through an application-owned request field, response header,
+or session state. Independently resolving the producer and consumer clocks can
+select different windows at a boundary.
+
 ## Raw bytes
 
 ```ts
@@ -99,10 +105,12 @@ use it as the decoded limit. The incremental maximum still applies to decoded
 bytes.
 
 Without a configured maximum, the helper may use `arrayBuffer()` and remains a
-complete-body API. Even with bounded ingestion, FISE 1.1 does not decrypt or
-return partial frames. Enforce separate wire-byte limits in the server, proxy,
-CDN, and fetch layer. A framed streaming format requires a different wire
-version.
+complete-body API. Even with bounded ingestion, the current `fise/http` surface
+accepts one ordinary 1.1 envelope; it does not accept `FISF`, issue HTTP Range
+requests, or return progressive frames. Enforce separate wire-byte limits in
+the server, proxy, CDN, and fetch layer. The opt-in in-memory framed API is
+specified in [FRAMED_BINARY.md](./FRAMED_BINARY.md); transport-aware range and
+streaming ingestion remain separate work.
 
 ## Security boundary
 

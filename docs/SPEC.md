@@ -6,6 +6,11 @@ This document specifies the string and binary wire formats implemented by FISE
 1.1. A conforming decoder accepts exactly version `1.1`. It rejects the earlier
 magic-less representation; no legacy negotiation exists in this version.
 
+The opt-in `FISF` indexed container is a distinct layered format whose inner
+values are complete 1.1 binary envelopes. Its version 1.0 grammar and
+range/progressive semantics are specified in
+[FRAMED_BINARY.md](./FRAMED_BINARY.md); they do not alter the grammar below.
+
 The functions are operationally named `encrypt` and `decrypt`. This
 specification defines reversible framing, compatibility, and structural
 validation. A transform supplies any stronger property. The built-in XOR
@@ -58,6 +63,12 @@ bound only when its stable transform ID equals the profile transform ID and it
 passes the implementation-compatibility checks. Built-in string and binary
 transform IDs are reserved for implementations registered by FISE; custom IDs
 remain an application-owned trusted-code boundary.
+
+The async binary API MAY instead receive one registered asynchronous backend
+with the same transform identity. The built-in dedicated-worker backend for
+`fise.xor.u8.v1` partitions by absolute byte offset and produces ordinary 1.1
+envelope bytes. Async execution does not change profile ownership or wire
+negotiation.
 
 `defineStringProfile` and `defineBinaryProfile` validate the static surface and
 return frozen copies. Runtime operations additionally validate active context,
@@ -122,6 +133,33 @@ that immutable snapshot for the complete operation.
 Context is external and is not serialized in the envelope. FISE does not try a
 previous timestamp or alternate metadata value. Rollover, replay, and fallback
 policy belong to the application.
+
+### 4.1 Deterministic time-window helper
+
+`resolveFiseTimeWindow(timeMs, { durationMs, originMs? })` is a convenience API
+for deriving an external integer timestamp from Unix-millisecond values. All
+three numeric inputs MUST be safe integers, `durationMs` MUST be positive, and
+`originMs` defaults to `0`. Options MUST be a plain object containing only own,
+enumerable `durationMs` and optional `originMs` data properties.
+
+For mathematical floor division, it returns a frozen object defined by:
+
+```text
+timestamp      = floor((timeMs - originMs) / durationMs)
+startMs        = originMs + timestamp * durationMs
+endExclusiveMs = startMs + durationMs
+```
+
+The result MUST fail with `INVALID_INPUT` if an input or result is outside the
+safe-integer range. The interval is `[startMs, endExclusiveMs)`, including for
+times before `originMs`.
+
+This helper is not part of the envelope grammar. It does not read a clock,
+serialize context, synchronize clocks, try adjacent windows, validate expiry,
+or prevent replay. Applications MUST coordinate the exact returned `timestamp`
+when producer and consumer do not share one operation anchor. A profile may map
+multiple timestamp values to the same marker or position; the default profiles
+use only `timestamp % 11` in their offset.
 
 ## 5. Common logical layout
 
@@ -240,8 +278,8 @@ instead of claiming full conformance to the default string profile.
 - salt range: 10–99 arbitrary bytes;
 - marker: two-byte unsigned big-endian salt length;
 - position: the same formula; and
-- transform: repeating byte XOR in JavaScript or the byte-compatible WASM
-  backend.
+- transform: repeating byte XOR in JavaScript, the byte-compatible WASM
+  backend, or the byte-compatible async dedicated-worker backend.
 
 Both default profiles allow an optional safe-integer timestamp and reject all
 metadata.
@@ -257,7 +295,7 @@ Validation failures are `FiseError` values with stable codes:
 | `INVALID_CONTEXT` | Missing, forbidden, undeclared, or wrongly typed context |
 | `INVALID_SALT` | Invalid or out-of-profile salt |
 | `INVALID_ENVELOPE` | Malformed header or field |
-| `UNSUPPORTED_VERSION` | Wire/media version is not exactly 1.1 |
+| `UNSUPPORTED_VERSION` | Selected ordinary/media/framed version is unsupported |
 | `PROFILE_MISMATCH` | Envelope/media profile differs from the supplied profile |
 | `TRANSFORM_MISMATCH` | Backend transform identity or semantics are incompatible |
 | `LENGTH_MISMATCH` | Declared and actual envelope lengths differ |
@@ -265,8 +303,13 @@ Validation failures are `FiseError` values with stable codes:
 | `MARKER_MISMATCH` | Recomputed marker differs from the envelope marker |
 | `INVALID_CIPHERTEXT` | Transform input/output is malformed |
 | `INVALID_PAYLOAD` | Restored UTF-8, JSON, or HTTP metadata is malformed |
+| `INVALID_RANGE` | A framed plaintext range is malformed or out of bounds |
+| `FRAME_LIMIT` | A framed count, index, or 32-bit container field exceeds its bound |
+| `OPERATION_ABORTED` | An async transform or framed operation was cancelled |
 | `RANDOM_UNAVAILABLE` | Web Crypto randomness is unavailable or failed |
 | `RUNTIME_UNAVAILABLE` | Another required runtime primitive is unavailable |
+| `PARALLEL_UNAVAILABLE` | Dedicated workers cannot be initialized in the runtime or policy |
+| `PARALLEL_WORKER_FAILED` | A retained worker failed or was already closed |
 | `WASM_UNAVAILABLE` | Required WebAssembly APIs are absent |
 | `WASM_COMPILE_FAILED` | WASM compilation, instantiation, or export validation failed |
 | `WASM_MEMORY_LIMIT` | WASM memory32 capacity or growth failed |
@@ -282,9 +325,15 @@ Let `n` be transformed length. Header work is constant apart from copying the
 bounded profile ID. Transform, assembly, reconstruction, and output storage are
 `O(n)`. Version 1.1 has no salt-range candidate factor.
 
-The non-streaming API holds complete input and output buffers. A streaming
-grammar requires a new wire version and is not defined by concatenating 1.1
-envelopes.
+The ordinary-envelope API holds complete input and output buffers. Its async
+worker backend copies transform inputs into worker-owned chunks and assembles a
+complete result. It does not change the ordinary wire or make parsing
+streaming.
+
+The separate `FISF` layer snapshots a complete container but can transform only
+selected inner envelopes or yield one restored byte frame per consumer pull.
+It is not defined by concatenating 1.1 envelopes and does not imply HTTP range
+fetching, incremental transport ingestion, or lazy JSON values.
 
 HTTP response adapters may ingest a body incrementally only to enforce an
 effective decoded-envelope maximum before complete allocation. They still

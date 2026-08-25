@@ -69,9 +69,16 @@ try {
 	writeFileSync(smokePath, `
 import {
   createWasmXorBinaryCipher,
+  createParallelXorBinaryCipher,
   defaultBinaryProfile,
   fiseBinaryDecrypt,
   fiseBinaryEncrypt,
+  fiseBinaryDecryptAsync,
+  fiseBinaryEncryptAsync,
+  fiseFramedBinaryDecrypt,
+  fiseFramedBinaryDecryptRange,
+  fiseFramedBinaryEncrypt,
+  resolveFiseTimeWindow,
   withBinaryBackend
 } from "fise";
 import * as conformance from "fise/conformance";
@@ -79,6 +86,7 @@ import * as profiles from "fise/profiles";
 import * as http from "fise/http";
 
 const input = Uint8Array.from([0, 1, 2, 127, 128, 255]);
+const timeWindow = resolveFiseTimeWindow(60_000, { durationMs: 60_000 });
 const equal = (left, right) =>
   left.length === right.length && left.every((value, index) => value === right[index]);
 
@@ -87,9 +95,31 @@ const jsOutput = fiseBinaryDecrypt(jsEnvelope, defaultBinaryProfile);
 const wasmProfile = withBinaryBackend(defaultBinaryProfile, await createWasmXorBinaryCipher());
 const wasmEnvelope = fiseBinaryEncrypt(input, wasmProfile);
 const wasmOutput = fiseBinaryDecrypt(wasmEnvelope, wasmProfile);
+const parallel = await createParallelXorBinaryCipher({ workerCount: 2, minimumParallelBytes: 0 });
+let parallelOutput;
+let framedOutput;
+let rangeOutput;
+try {
+  const parallelEnvelope = await fiseBinaryEncryptAsync(input, defaultBinaryProfile, { backend: parallel });
+  parallelOutput = await fiseBinaryDecryptAsync(parallelEnvelope, defaultBinaryProfile, { backend: parallel });
+  const framed = await fiseFramedBinaryEncrypt(input, defaultBinaryProfile, { frameSize: 2, backend: parallel });
+  framedOutput = await fiseFramedBinaryDecrypt(framed, defaultBinaryProfile, { backend: parallel });
+  rangeOutput = await fiseFramedBinaryDecryptRange(framed, defaultBinaryProfile, { start: 1, endExclusive: 5 });
+} finally {
+  await parallel.close();
+}
 
-if (!equal(input, jsOutput) || !equal(input, wasmOutput)) {
-  throw new Error("Packed JS/WASM binary round trip failed");
+if (
+  timeWindow.timestamp !== 1 ||
+  timeWindow.startMs !== 60_000 ||
+  timeWindow.endExclusiveMs !== 120_000 ||
+  !equal(input, jsOutput) ||
+  !equal(input, wasmOutput)
+  || !equal(input, parallelOutput)
+  || !equal(input, framedOutput)
+  || !equal(input.slice(1, 5), rangeOutput)
+) {
+  throw new Error("Packed root API or JS/WASM binary round trip failed");
 }
 if (
   typeof conformance.createBinaryConformanceEnvelope !== "function" ||
@@ -101,22 +131,39 @@ if (
 `);
 	run(process.execPath, [smokePath], { cwd: consumerRoot });
 
+	const installedPackageRoot = join(consumerRoot, "node_modules/fise");
 	for (const relativePath of [
+		"examples/README.md",
+		"examples/basic-string.mjs",
+		"examples/binary-payload.mjs",
+		"examples/framed-binary.mjs",
+		"examples/json-http.mjs",
+		"examples/profile-rotation.mjs",
+		"examples/parallel-binary.mjs",
+		"examples/run-all.mjs",
+		"examples/time-window.mjs",
+		"examples/wasm-backend.mjs",
 		"reference/python/fise_v11_binary.py",
 		"reference/python/test_fise_v11_binary.py",
 		"reference/python/fixtures/compiled-binary-artifact.json",
 		"reference/python/fixtures/compiled-binary-vector.json"
 	]) {
 		assert.ok(
-			existsSync(join(consumerRoot, "node_modules/fise", relativePath)),
-			`Packed reference artifact is missing: ${relativePath}`
+			existsSync(join(installedPackageRoot, relativePath)),
+			`Packed artifact is missing: ${relativePath}`
 		);
 	}
+	const examplesOutput = run(
+		process.execPath,
+		[join(installedPackageRoot, "examples/run-all.mjs")],
+		{ cwd: consumerRoot }
+	);
+	assert.match(examplesOutput, /Verified 8 runnable FISE examples\./);
 
 	console.log(
 		`Packed FISE ${metadata.version}: ${metadata.entryCount} files, ` +
 		`${metadata.size} bytes, SHA-256 ${sha256}; empty-consumer ESM, subpath, ` +
-		`JS, WASM, and reference checks passed.`
+		`JS, WASM, parallel workers, framed range/progressive artifacts, runnable examples, and reference checks passed.`
 	);
 } finally {
 	rmSync(temporaryRoot, { recursive: true, force: true });

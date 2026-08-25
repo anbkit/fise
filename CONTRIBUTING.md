@@ -23,12 +23,20 @@ npm run verify:browser:serve
 The browser command prints a loopback URL backed by an installed tarball. Open
 it in each claimed browser and require a PASS result with no console errors.
 
+Runnable examples are packed public-API contracts. Keep them dependency-free,
+import only from published `fise` entry points, assert their outcomes, and add
+new entries to `examples/run-all.mjs` so source and tarball gates execute them.
+
 When changing a profile, manifest, transform, header, or parser:
 
 - update the normative specification and migration notes;
 - add deterministic string/binary or manifest vectors;
 - test malformed input and resource bounds;
 - verify all compatible JavaScript/WASM backends;
+- verify async worker parity, cancellation, lifecycle, and packed module-worker
+  loading when changing binary transform execution;
+- preserve `FISF` header/index vectors, selected-frame semantics, bounds, and
+  progressive backpressure when changing framed behavior;
 - use a new profile or wire identity when decode behavior changes; and
 - do not add legacy fallback to the 1.1 decoder.
 

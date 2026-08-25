@@ -75,8 +75,23 @@ Producer and consumer must supply the same relevant context. Context is not in
 the envelope. FISE validates presence and primitive type, but it cannot prove
 that an application chose the correct business value.
 
-If layout behavior uses a time bucket, define rollover explicitly. Automatic
-fallback to earlier buckets is intentionally absent.
+If layout behavior uses a time bucket, derive it deterministically:
+
+```ts
+import { resolveFiseTimeWindow } from "fise";
+
+const window = resolveFiseTimeWindow(requestTimeMs, {
+  durationMs: 60_000,
+  originMs: 0
+});
+const context = { timestamp: window.timestamp };
+```
+
+Resolve from one shared request/session anchor or coordinate the returned
+timestamp out of band. Calling `Date.now()` independently on producer and
+consumer can cross a window boundary. Define rollover explicitly; automatic
+fallback to earlier buckets is intentionally absent. The helper does not add
+expiry, freshness, or replay prevention.
 
 ## Marker and offset
 
@@ -177,6 +192,25 @@ semantic identity. The binary ID covers both the JavaScript and WASM backends.
 Binding also
 runs deterministic encrypt/decrypt, round-trip, ownership, and mutation checks
 using salt lengths from the profile's declared range.
+
+The asynchronous worker backend is passed to `fiseBinary*Async` or framed
+operation options instead of being installed into the synchronous profile:
+
+```ts
+const workers = await createParallelXorBinaryCipher({ workerCount: 4 });
+try {
+  const envelope = await fiseBinaryEncryptAsync(bytes, assetProfile, {
+    backend: workers
+  });
+} finally {
+  await workers.close();
+}
+```
+
+The async path snapshots the backend function pair, requires the same transform
+ID, and reserves the built-in ID for the FISE worker implementation. Worker
+chunk parity and ordinary-envelope interoperability are covered by conformance
+tests. The profile still owns the transform semantics and layout.
 
 Those finite checks catch implementation drift; they are not a mathematical
 proof about arbitrary trusted callback code. Application-owned transforms use

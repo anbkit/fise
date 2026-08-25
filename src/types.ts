@@ -75,6 +75,31 @@ export interface FiseBinaryCipher {
 	decrypt(cipherText: Uint8Array, salt: Uint8Array): Uint8Array;
 }
 
+/** Cancellation passed to an asynchronous byte-transform backend. */
+export interface FiseAsyncBinaryTransformOptions {
+	readonly signal?: AbortSignal;
+}
+
+/**
+ * Asynchronous implementation backend for one binary transform identity.
+ *
+ * @remarks A backend changes execution only. It must produce exactly the same
+ * bytes as the synchronous transform owned by the selected profile.
+ */
+export interface FiseAsyncBinaryCipher {
+	readonly id: string;
+	encrypt(
+		plaintext: Uint8Array,
+		salt: Uint8Array,
+		options?: FiseAsyncBinaryTransformOptions
+	): Promise<Uint8Array>;
+	decrypt(
+		cipherText: Uint8Array,
+		salt: Uint8Array,
+		options?: FiseAsyncBinaryTransformOptions
+	): Promise<Uint8Array>;
+}
+
 interface FiseProfileBase {
 	/** Stable public compatibility identifier written into the envelope. */
 	readonly id: string;
@@ -106,4 +131,16 @@ export interface EncryptOptions {
 export interface DecryptOptions extends EncryptOptions {
 	/** Optional caller bound; the stricter of this and the profile limit wins. */
 	readonly maxEnvelopeLength?: number;
+}
+
+/** Async full-buffer binary operation using an optional compatible backend. */
+export interface FiseAsyncBinaryEncryptOptions extends EncryptOptions {
+	readonly backend?: FiseAsyncBinaryCipher;
+	readonly signal?: AbortSignal;
+}
+
+/** Async full-buffer binary decode options. */
+export interface FiseAsyncBinaryDecryptOptions extends DecryptOptions {
+	readonly backend?: FiseAsyncBinaryCipher;
+	readonly signal?: AbortSignal;
 }

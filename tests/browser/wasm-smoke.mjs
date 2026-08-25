@@ -1,13 +1,21 @@
 import {
 	FISE_WIRE_VERSION,
 	compileFiseProfileManifest,
+	createParallelXorBinaryCipher,
 	createWasmXorBinaryCipher,
 	defaultBinaryProfile,
 	defaultStringProfile,
 	fiseBinaryDecrypt,
 	fiseBinaryEncrypt,
+	fiseBinaryDecryptAsync,
+	fiseBinaryEncryptAsync,
 	fiseDecrypt,
 	fiseEncrypt,
+	fiseFramedBinaryDecrypt,
+	fiseFramedBinaryDecryptProgressive,
+	fiseFramedBinaryDecryptRange,
+	fiseFramedBinaryEncrypt,
+	resolveFiseTimeWindow,
 	withBinaryBackend,
 	xorBinaryCipher
 } from "/dist/index.js";
@@ -43,6 +51,7 @@ try {
 		compiled.profile
 	);
 	const restoredJson = await readFiseJsonResponse(jsonResponse, compiled.profile);
+	const timeWindow = resolveFiseTimeWindow(60_000, { durationMs: 60_000 });
 	const wasmCipher = await createWasmXorBinaryCipher({ maxMemoryPages: 8 });
 	const text = "FISE browser round trip \ud83c\udf0d";
 	const textEnvelope = fiseEncrypt(text, defaultStringProfile);
@@ -61,6 +70,51 @@ try {
 	const wasmDecrypted = fiseBinaryDecrypt(wasmEnvelope, wasmProfile);
 	const jsEnvelopeViaWasm = fiseBinaryDecrypt(jsEnvelope, wasmProfile);
 	const wasmEnvelopeViaJs = fiseBinaryDecrypt(wasmEnvelope, defaultBinaryProfile);
+	const parallel = await createParallelXorBinaryCipher({
+		workerCount: 2,
+		minimumParallelBytes: 0
+	});
+	let parallelDecrypted;
+	let framedDecrypted;
+	let framedRange;
+	let progressiveLength = 0;
+	try {
+		const parallelEnvelope = await fiseBinaryEncryptAsync(
+			input,
+			defaultBinaryProfile,
+			{ backend: parallel }
+		);
+		parallelDecrypted = await fiseBinaryDecryptAsync(
+			parallelEnvelope,
+			defaultBinaryProfile,
+			{ backend: parallel }
+		);
+		const framed = await fiseFramedBinaryEncrypt(input, defaultBinaryProfile, {
+			frameSize: 64 * 1024,
+			concurrency: 2,
+			backend: parallel
+		});
+		framedDecrypted = await fiseFramedBinaryDecrypt(
+			framed,
+			defaultBinaryProfile,
+			{ concurrency: 2, backend: parallel }
+		);
+		framedRange = await fiseFramedBinaryDecryptRange(
+			framed,
+			defaultBinaryProfile,
+			{ start: 65_000, endExclusive: 132_000 },
+			{ backend: parallel }
+		);
+		for await (const frame of fiseFramedBinaryDecryptProgressive(
+			framed,
+			defaultBinaryProfile,
+			{ backend: parallel }
+		)) {
+			progressiveLength += frame.length;
+		}
+	} finally {
+		await parallel.close();
+	}
 	let memoryCapRejected = false;
 	try {
 		wasmCipher.encrypt(new Uint8Array(8 * 64 * 1024), new Uint8Array([1]));
@@ -79,11 +133,15 @@ try {
 		FISE_WIRE_VERSION.major !== 1 ||
 		FISE_WIRE_VERSION.minor !== 1 ||
 		!csp.includes("'wasm-unsafe-eval'") ||
+		!csp.includes("worker-src 'self'") ||
 		restoredJson.browser !== true ||
 		restoredJson.profileId !== compiled.profileId ||
 		!compiled.profileId.startsWith("browser.smoke.v1.") ||
 		!Object.isFrozen(compiled.manifest) ||
 		!Object.isFrozen(compiled.manifest.offset) ||
+		timeWindow.timestamp !== 1 ||
+		timeWindow.startMs !== 60_000 ||
+		timeWindow.endExclusiveMs !== 120_000 ||
 		restoredText !== text ||
 		!textEnvelope.startsWith("FISE0101") ||
 		!hasBinaryV11Header ||
@@ -92,12 +150,16 @@ try {
 		!equal(wasmDecrypted, input) ||
 		!equal(jsEnvelopeViaWasm, input) ||
 		!equal(wasmEnvelopeViaJs, input) ||
+		!equal(parallelDecrypted, input) ||
+		!equal(framedDecrypted, input) ||
+		!equal(framedRange, input.slice(65_000, 132_000)) ||
+		progressiveLength !== input.length ||
 		!memoryCapRejected
 	) {
-		throw new Error("Manifest, CSP, HTTP, string, JS binary, or WASM check failed");
+		throw new Error("Manifest, time window, CSP, HTTP, string, JS/WASM/worker binary, or framed check failed");
 	}
 
-	result.value = "PASS: packed manifest + CSP + HTTP + string + JS/WASM binary";
+	result.value = "PASS: packed manifest + time window + CSP + HTTP + string + JS/WASM/worker + framed range/progressive";
 	result.textContent = result.value;
 	document.documentElement.dataset.status = "pass";
 	document.documentElement.dataset.profile = compiled.profileId;

@@ -9,7 +9,8 @@ FISE changes the application-layer representation exchanged by a producer and
 an authorized client. Version 1.1 combines explicit wire framing, one atomic
 compatibility profile, a reversible transform, public random salt, configurable
 marker placement, canonical profile artifacts, deterministic vectors, rollout
-diffs, binary HTTP helpers, and an optional WebAssembly byte backend.
+diffs, binary HTTP helpers, optional WebAssembly/dedicated-worker byte
+backends, and an indexed framed-binary layer.
 
 FISE is designed to create representation diversity and a maintainable
 adaptation step for integrations that otherwise consume stable plaintext
@@ -19,10 +20,11 @@ result. The current evidence establishes deterministic behavior, bounded
 parsing, scoped runtime performance, JavaScript/WASM parity, and independent
 Python interoperability for the manifest-compiled binary subset.
 
-The paper also identifies parallel transform, partial/range restoration, and
-lazy/progressive restoration as prominent architectural opportunities. They
-are explicitly classified as proposed extensions rather than implemented 1.1
-features.
+The package also implements an optional dedicated-worker transform that keeps
+ordinary 1.1 wire bytes unchanged, plus a separately versioned indexed binary
+container for range and progressive byte restoration. These are bounded
+execution and framing capabilities—not evidence of universal parallel speedup,
+HTTP range fetching, streaming input, or lazy JSON parsing.
 
 The built-in repeating-XOR transforms carry their salt in the envelope and
 provide neither cryptographic confidentiality nor authenticity. FISE assumes
@@ -65,7 +67,8 @@ The engineering contributions of version 1.1 are the composition of:
 - deterministic conformance and first-class rotation artifacts;
 - no implicit profile, context, version, or legacy fallback; and
 - one implementation surface spanning strings, bytes, HTTP, JavaScript, WASM,
-  and a scoped independent Python binary reference.
+  dedicated workers, indexed byte frames, and a scoped independent Python
+  binary reference.
 
 These are protocol- and lifecycle-engineering contributions. XOR, random salt,
 headers, markers, manifests, digests, and WASM loops are not claimed as new
@@ -73,12 +76,12 @@ algorithms.
 
 The binary design also creates a deliberate execution-model extension path.
 For the built-in byte transform, each transformed byte depends only on the byte
-at the same absolute position and the corresponding repeating-salt byte. That
-position-separable property makes parallel backends plausible. Partial and lazy
-restoration are related but stronger ideas: partial restoration requires an
-offset-aware capability contract, while lazy restoration requires a framed or
-indexed wire contract. Section 7.3 distinguishes these proposed capabilities
-from the implemented 1.1 surface.
+at the same absolute position and the corresponding repeating-salt byte. The
+worker backend implements that partition while preserving transform identity.
+Partial and progressive restoration use a stronger boundary: the opt-in `FISF`
+container indexes independent inner 1.1 envelopes. Section 7.3 distinguishes
+what these implementations deliver from transport streaming and lazy
+application decoding, which remain future work.
 
 ## 2. Claims, terminology, and threat model
 
@@ -267,6 +270,13 @@ Encryption and decryption accept the profile directly. An operation cannot
 substitute an unrelated transform. Definition helpers validate and freeze owned
 copies; every operation consumes one immutable profile/context snapshot.
 
+When an application derives timestamp context from Unix time,
+`resolveFiseTimeWindow` standardizes mathematical-floor bucketing with an
+explicit duration, alignment origin, and half-open interval. It reads no clock
+and leaves the returned integer external to the envelope. This is a correctness
+and interoperability helper, not an expiry, freshness, or replay mechanism;
+producer and consumer still coordinate one exact context value.
+
 The shared runtime interface contains two materially different profile classes:
 
 | Class | Source of behavior | Identity | Interoperability claim |
@@ -352,29 +362,33 @@ WASM is a performance backend, not an enclave or anti-analysis boundary.
 
 ### 7.3 Execution-model extension path
 
-The following properties are prominent architectural opportunities, not
-additional version 1.1 API guarantees:
+The implemented boundaries are deliberately narrower than their informal
+feature names:
 
-| Direction | Architectural basis | Contract still required | 1.1 status |
-| --- | --- | --- | --- |
-| Parallel encrypt/decrypt—more precisely, parallel binary transform | For `fise.xor.u8.v1`, byte `i` depends only on input byte `i` and salt byte `i mod saltLength` | Deterministic partitioning, worker/SIMD/thread ownership, transfer and cancellation rules, crossover measurements, and backend conformance | **Proposed**; current JS and WASM backends each execute one full-buffer loop |
-| Partial or range restoration | A position-separable transform can restore a slice when its absolute transform offset is known | A declared sliceability capability, offset-aware API, marker/range mapping, bounded range semantics, and profile-specific conformance | **Proposed**; the 1.1 API validates and reconstructs a complete envelope |
-| Lazy or progressive restoration | Independent frames or a validated index could make bounded units available incrementally | New wire negotiation, frame/index grammar, ordering, truncation, backpressure, failure, and application-decoding semantics | **Proposed** for a future wire version; concatenated 1.1 envelopes are not streaming |
+| Capability | Implemented contract | Explicit non-claim |
+| --- | --- | --- |
+| Parallel encrypt/decrypt—more precisely, parallel binary transform | `createParallelXorBinaryCipher()` retains dedicated workers, partitions `fise.xor.u8.v1` by absolute offset, snapshots caller bytes, supports cancellation/close, and is byte-compatible with ordinary 1.1 envelopes | No measured universal speedup or automatic support for arbitrary transforms, SIMD, or shared-memory threads |
+| Partial or range restoration | `FISF` 1.0 indexes bounded independent inner 1.1 envelopes; the range API validates the outer index and restores only intersecting frames | Not direct slicing of an ordinary 1.1 envelope and not an HTTP Range fetcher |
+| Lazy or progressive restoration | An async generator restores one indexed byte frame per consumer pull with frame-level backpressure | The complete container is already in memory; output is bytes, not lazy JSON or partially safe application values |
 
-Parallel transform is the nearest extension because a conforming backend could
-preserve the existing logical transform ID and envelope bytes. It would not
-make parsing, marker validation, envelope assembly, or JSON decoding parallel
-by implication.
+The worker backend preserves the existing logical transform ID and ordinary
+envelope bytes. It does not make profile validation, marker work, envelope
+assembly, or JSON decoding parallel. Inputs below an explicit threshold use the
+local JavaScript loop, and the backend retains resources until `close()`.
 
-Partial restoration is profile-specific rather than a universal FISE property.
-Arbitrary application-defined transforms may depend on the entire input and
-must not be treated as sliceable. Lazy JSON restoration is a still stronger
-contract: producing plaintext byte chunks does not by itself provide an
-incremental JSON value or define when application code may safely observe it.
+The framed format uses distinct `FISF` magic and version 1.0 rather than
+overloading the `FISE` 1.1 decoder. Its header binds one profile ID, frame size,
+total plaintext length, frame count, and fixed-width absolute index. Every
+selected inner envelope still passes normal 1.1 validation and must restore to
+its declared frame position. Unselected inner envelopes are intentionally not
+validated by a disjoint range request.
 
-The promotion criteria are a versioned contract, bounded failure behavior,
-conformance vectors, target-runtime verification, and measured benefit. The
-concrete research sequence is maintained in [ROADMAP.md](./ROADMAP.md).
+Arbitrary application-defined transforms are never inferred to be sliceable;
+framing obtains independence by applying the complete selected profile to each
+frame. Incremental transport, remote range acquisition, and incremental JSON
+parsing remain proposed. The exact grammar and observation boundary are in
+[FRAMED_BINARY.md](./FRAMED_BINARY.md), with remaining research in
+[ROADMAP.md](./ROADMAP.md).
 
 ### 7.4 Conformance evidence
 
@@ -416,6 +430,11 @@ wire costs must not be conflated.
 scoped measurements. Browser main-thread, worker transfer/startup, allocation,
 GC, mobile/device, power, compression, and end-to-end application latency remain
 deployment measurements.
+
+The worker and framed APIs have functional conformance and browser-smoke
+coverage, but no worker crossover or responsiveness benchmark is recorded in
+this paper. Their implementation must not be converted into a performance
+claim without that evidence.
 
 See [PERFORMANCE.md](./PERFORMANCE.md).
 
@@ -551,10 +570,11 @@ failure semantics, canonical artifacts, rotation diffs, binary HTTP helpers,
 JS/WASM parity, and a scoped independent Python reference improve correctness
 and operability.
 
-Its position-separable built-in binary transform also provides a credible path
-to parallel execution. Partial/range and lazy/progressive restoration remain
-explicit research directions requiring additional capability and wire
-contracts; they are not silently implied by the complete-buffer 1.1 API.
+Its position-separable built-in binary transform now has a dedicated-worker
+backend that preserves ordinary 1.1 bytes. The distinct indexed `FISF` layer
+adds bounded range and progressive byte restoration. Transport-aware ranges,
+incremental input, and lazy application decoding remain explicit research
+directions rather than implications of those APIs.
 
 Its strongest defensible claim is precise: FISE is a governed mechanism for
 reversible representation diversity whose adaptation effect can be measured.

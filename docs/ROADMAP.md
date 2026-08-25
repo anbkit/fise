@@ -11,6 +11,8 @@ Implemented in the current source tree:
 - atomic profiles owning transform, layout, context, limits, and identity;
 - marker recomputation with no `decodeLength`;
 - exact lengths, fixed tail salt, typed failures, and pre-parse core bounds;
+- deterministic half-open Unix-millisecond time-window context derivation with
+  no hidden clock read, context serialization, or adjacent-window fallback;
 - canonical profile manifests, 128-bit digest-prefix IDs, full-digest
   deeply immutable artifacts, strict numeric/exhaustive salt-range validation,
   vectors, and rotation diffs;
@@ -20,6 +22,12 @@ Implemented in the current source tree:
 - registered built-in JavaScript/WASM backend binding, semantic checks, bounded
   WASM memory, and parity tests;
 - deterministic Unicode/binary property sweeps;
+- real dedicated-worker XOR execution with absolute-offset partitioning,
+  cancellation, explicit lifecycle, strict backend identity, and unchanged
+  ordinary 1.1 envelope bytes;
+- the opt-in indexed `FISF` 1.0 container with bounded independent inner 1.1
+  envelopes, full/range restore, and pull-driven progressive byte restore;
+- eight dependency-free, packed, executable public-API examples;
 - an independent standard-library Python reference for compiled binary
   artifact identity and wire conformance;
 - runtime adaptation benchmark with explicit claim boundaries; and
@@ -53,15 +61,15 @@ embedded, and Smart TV measurements before making broad support claims.
 
 ## Performance and integration
 
-### Parallel binary transform backends
+### Parallel performance evidence and additional backends
 
-Specify deterministic byte-range partitioning for transforms that explicitly
-declare position separability. Evaluate workers, transferable buffers, SIMD,
-and runtime-supported threads while preserving transform identity, output
-ownership, cancellation, failure, and full-envelope conformance. Measure
-startup and transfer cost, main-thread responsiveness, throughput, and the
-payload-size crossover before presenting parallel encrypt/decrypt as a
-supported capability.
+The built-in XOR worker backend now supplies deterministic absolute-offset
+partitioning, caller-input snapshots, cancellation, explicit close, strict
+identity, and ordinary-envelope conformance. Add raw worker startup/transfer
+samples, main-thread responsiveness, throughput, and payload-size crossover
+measurements before claiming a general speedup. SIMD and runtime-supported
+threads remain separate backend research; do not infer position separability
+for arbitrary profile callbacks.
 
 ### Caller-owned output
 
@@ -75,22 +83,24 @@ no-FISE baselines, and real application payload distributions.
 
 ## Protocol research
 
-### Partial and range restoration
+### Transport-aware range restoration
 
-Define a profile capability for slice-local transforms, an absolute-offset API,
-marker-aware range mapping, caller and transport bounds, and deterministic
-range vectors. Do not infer sliceability for arbitrary runtime callbacks. The
-current 1.1 decoder validates and reconstructs complete envelopes and is not a
-range-request protocol.
+`FISF` range restore now validates one outer index and transforms only selected
+independent inner envelopes. Add a transport API that fetches a bounded
+header/index first and then only required envelope ranges, with HTTP validator,
+cache, cancellation, retry, and compressed-transfer semantics. Ordinary `FISE`
+1.1 envelopes remain complete-value formats and arbitrary callbacks are not
+treated as sliceable.
 
-### Framed streaming and lazy restoration wire v2
+### Incremental transport and application lazy decoding
 
-Streaming needs new magic/version negotiation, bounded frames, ordering and
-truncation semantics, incremental parsing, backpressure, resource limits,
-frame/index validation, and golden vectors. Define separately when restored
-bytes and application values may become observable; incremental byte output
-does not automatically make JSON decoding lazy. Concatenating 1.1 envelopes is
-not a streaming protocol.
+`FISF` 1.0 defines magic/version negotiation, bounded indexed frames,
+ordering/truncation checks, pull-driven byte backpressure, resource limits, and
+a golden vector. Its current API still receives the complete container. A true
+streaming reader needs incremental header/index/body ingestion and bounded
+buffer ownership. Lazy JSON additionally needs an incremental UTF-8/parser and
+an explicit rule for when partial application values become observable.
+Concatenating ordinary 1.1 envelopes remains unsupported.
 
 ### Authenticated composition
 
@@ -123,5 +133,6 @@ A proposal becomes supported only when it has:
 - deterministic independent conformance evidence;
 - bounded malformed-input behavior;
 - real target-runtime verification;
-- measured legitimate-user and adaptation benefit; and
+- measured legitimate-user or adaptation benefit before making a benefit
+  claim; and
 - security wording limited to the property actually delivered.

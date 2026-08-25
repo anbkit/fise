@@ -7,6 +7,7 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const documents = [
 	"README.md",
 	"CONTRIBUTING.md",
+	"examples/README.md",
 	...readdirSync(resolve(repositoryRoot, "docs"))
 		.filter(name => name.endsWith(".md"))
 		.map(name => `docs/${name}`)

@@ -47,9 +47,31 @@ export function fiseBinaryEncryptNormalized(
 		normalized.saltRange.min,
 		normalized.saltRange.max
 	);
-	return assembleBinaryEnvelope(
+	return fiseBinaryEncryptNormalizedWithSalt(
 		input,
 		randomSaltBinary(saltLength),
+		normalized
+	);
+}
+
+/** @internal Encrypts with one normalized profile and caller-owned test salt. */
+export function fiseBinaryEncryptNormalizedWithSalt(
+	input: Uint8Array,
+	salt: Uint8Array,
+	normalized: NormalizedBinaryProfile
+): Uint8Array {
+	assertUint8ArrayValue(input, "binary input", "INVALID_INPUT");
+	assertUint8ArrayValue(salt, "binary salt", "INVALID_SALT");
+	assertSaltLengthAllowed(salt.length, normalized, "INVALID_SALT");
+	const transformed = runBinaryTransform(
+		"encrypt",
+		normalized,
+		input,
+		salt
+	);
+	return assembleBinaryEnvelopeFromTransformed(
+		transformed,
+		salt,
 		normalized
 	);
 }
@@ -63,7 +85,7 @@ export function fiseBinaryEncryptWithSalt(
 ): Uint8Array {
 	assertUint8ArrayValue(input, "binary input", "INVALID_INPUT");
 	assertUint8ArrayValue(salt, "binary salt", "INVALID_SALT");
-	return assembleBinaryEnvelope(
+	return fiseBinaryEncryptNormalizedWithSalt(
 		input,
 		salt,
 		normalizeBinaryProfile(profile, options)
@@ -92,6 +114,25 @@ export function fiseBinaryDecryptNormalized(
 	envelope: Uint8Array,
 	normalized: NormalizedBinaryProfile
 ): Uint8Array {
+	const { transformed, salt } = extractBinaryEnvelopePayload(
+		envelope,
+		normalized
+	);
+	const plaintext = runBinaryTransform(
+		"decrypt",
+		normalized,
+		transformed,
+		salt
+	);
+	assertUint8ArrayValue(plaintext, "binary transform output", "INVALID_CIPHERTEXT");
+	return plaintext;
+}
+
+/** @internal Validates framing and returns the transform input and public salt. */
+export function extractBinaryEnvelopePayload(
+	envelope: Uint8Array,
+	normalized: NormalizedBinaryProfile
+): Readonly<{ transformed: Uint8Array; salt: Uint8Array }> {
 	assertUint8ArrayValue(envelope, "binary envelope", "INVALID_ENVELOPE");
 	assertEnvelopeLimit(envelope.length, normalized.maxEnvelopeLength);
 	const header = parseBinaryEnvelopeHeader(envelope);
@@ -123,29 +164,18 @@ export function fiseBinaryDecryptNormalized(
 	const transformed = new Uint8Array(header.transformedLength);
 	transformed.set(envelope.subarray(bodyStart, markerStart), 0);
 	transformed.set(envelope.subarray(markerEnd, saltStart), markerPosition);
-	const plaintext = runBinaryTransform(
-		"decrypt",
-		normalized,
-		transformed,
-		salt
-	);
-	assertUint8ArrayValue(plaintext, "binary transform output", "INVALID_CIPHERTEXT");
-	return plaintext;
+	return Object.freeze({ transformed, salt });
 }
 
-function assembleBinaryEnvelope(
-	input: Uint8Array,
+/** @internal Assembles one validated 1.1 envelope around transformed bytes. */
+export function assembleBinaryEnvelopeFromTransformed(
+	transformed: Uint8Array,
 	salt: Uint8Array,
 	normalized: NormalizedBinaryProfile
 ): Uint8Array {
-	assertSaltLengthAllowed(salt.length, normalized, "INVALID_SALT");
-	const transformed = runBinaryTransform(
-		"encrypt",
-		normalized,
-		input,
-		salt
-	);
 	assertUint8ArrayValue(transformed, "binary transform output", "INVALID_CIPHERTEXT");
+	assertUint8ArrayValue(salt, "binary salt", "INVALID_SALT");
+	assertSaltLengthAllowed(salt.length, normalized, "INVALID_SALT");
 	const layoutInput: FiseLayoutInput = {
 		transformedLength: transformed.length,
 		saltLength: salt.length

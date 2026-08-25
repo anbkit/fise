@@ -53,11 +53,10 @@ disagreement when it changes the expected value or position. They do not cover
 every payload byte, are not a MAC, and do not authenticate who created an
 envelope.
 
-The position-separable built-in binary transform provides a path to future
-parallel backends. Partial/range and lazy/progressive restoration are proposed
-extensions—not 1.1 APIs. Partial restoration requires an offset-aware profile
-capability; lazy restoration requires a new framed or indexed wire contract.
-See the [roadmap](./docs/ROADMAP.md).
+Binary workloads can opt into a real worker backend without changing ordinary
+1.1 envelope bytes. A separate indexed `FISF` container adds frame-level range
+restore and progressive byte output. It does not claim HTTP range fetching,
+streaming input, or lazy JSON parsing. See [Framed Binary](./docs/FRAMED_BINARY.md).
 
 ## Choose a surface
 
@@ -65,13 +64,16 @@ See the [roadmap](./docs/ROADMAP.md).
 | --- | --- | --- |
 | JavaScript strings | `fiseEncrypt`, `fiseDecrypt` | `fise` |
 | Binary data | `fiseBinaryEncrypt`, `fiseBinaryDecrypt` | `fise` |
+| Worker binary transform | `createParallelXorBinaryCipher`, `fiseBinary*Async` | `fise` |
+| Indexed range/progressive bytes | `fiseFramedBinary*` | `fise` |
+| Deterministic time-window context | `resolveFiseTimeWindow` | `fise` |
 | UTF-8, JSON, HTTP `Response` | `fiseUtf8*`, `fiseJson*`, `createFise*Response` | `fise/http` |
 | Profiles and manifests | `define*Profile`, `compileFiseProfileManifest` | `fise`, `fise/profiles` |
 | Deterministic vectors | `create*ConformanceEnvelope` | `fise/conformance` |
 | Optional WASM backend | `createWasmXorBinaryCipher`, `withBinaryBackend` | `fise` |
 
-See the [quick start](./docs/QUICK_START.md) for binary, JSON, HTTP, and WASM
-examples.
+See the [quick start](./docs/QUICK_START.md) for time-window, binary, JSON,
+HTTP, and WASM examples.
 
 ## Reproducible profiles
 
@@ -120,10 +122,11 @@ cached envelopes. See [Migrating to 1.1](./docs/MIGRATION_V1_1.md).
 
 ## Documentation
 
+- [Runnable examples](./examples/README.md)
 - [Quick start](./docs/QUICK_START.md)
 - [Reference specification](./docs/SPEC.md)
 - [Profiles](./docs/PROFILES.md) and [profile manifests](./docs/PROFILE_MANIFEST.md)
-- [HTTP](./docs/HTTP.md), [WASM](./docs/WASM.md), and [conformance](./docs/CONFORMANCE.md)
+- [HTTP](./docs/HTTP.md), [WASM](./docs/WASM.md), [framed binary](./docs/FRAMED_BINARY.md), and [conformance](./docs/CONFORMANCE.md)
 - [Security boundary](./docs/SECURITY.md)
 - [Performance](./docs/PERFORMANCE.md) and [adaptation evaluation](./docs/ADAPTATION_EVALUATION.md)
 - [Release evidence](./docs/RELEASE_EVIDENCE.md)

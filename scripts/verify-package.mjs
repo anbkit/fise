@@ -13,6 +13,8 @@ assert.equal(packageJson.engines.node, ">=20");
 assert.deepEqual(packageJson.files, [
 	"dist",
 	"docs/*.md",
+	"examples/*.mjs",
+	"examples/README.md",
 	"reference/python/*.py",
 	"reference/python/fixtures/*.json",
 	"reference/python/README.md",
@@ -36,8 +38,27 @@ for (const path of [
 	"../dist/profiles.d.ts",
 	"../dist/http.js",
 	"../dist/http.d.ts",
+	"../dist/timeWindow.js",
+	"../dist/timeWindow.d.ts",
+	"../dist/asyncBinary.js",
+	"../dist/asyncBinary.d.ts",
+	"../dist/framedBinary.js",
+	"../dist/framedBinary.d.ts",
+	"../dist/parallelXorBinaryCipher.js",
+	"../dist/parallelXorBinaryCipher.d.ts",
+	"../dist/workers/xorWorker.js",
 	"../dist/core/wasmXorBinaryCipher.js",
 	"../dist/core/wasmXorBinaryCipher.d.ts",
+	"../examples/README.md",
+	"../examples/basic-string.mjs",
+	"../examples/binary-payload.mjs",
+	"../examples/framed-binary.mjs",
+	"../examples/json-http.mjs",
+	"../examples/profile-rotation.mjs",
+	"../examples/parallel-binary.mjs",
+	"../examples/run-all.mjs",
+	"../examples/time-window.mjs",
+	"../examples/wasm-backend.mjs",
 	"../reference/python/fise_v11_binary.py",
 	"../reference/python/test_fise_v11_binary.py",
 	"../reference/python/fixtures/compiled-binary-artifact.json",
@@ -59,6 +80,14 @@ const httpApi = await import("fise/http");
 assert.deepEqual(rootApi.FISE_WIRE_VERSION, { major: 1, minor: 1 });
 assert.equal(typeof rootApi.FiseError, "function");
 assert.equal(typeof rootApi.createWasmXorBinaryCipher, "function");
+assert.equal(typeof rootApi.createParallelXorBinaryCipher, "function");
+assert.equal(typeof rootApi.fiseBinaryEncryptAsync, "function");
+assert.equal(typeof rootApi.fiseBinaryDecryptAsync, "function");
+assert.equal(typeof rootApi.fiseFramedBinaryEncrypt, "function");
+assert.equal(typeof rootApi.fiseFramedBinaryDecrypt, "function");
+assert.equal(typeof rootApi.fiseFramedBinaryDecryptRange, "function");
+assert.equal(typeof rootApi.fiseFramedBinaryDecryptProgressive, "function");
+assert.equal(typeof rootApi.resolveFiseTimeWindow, "function");
 assert.equal(typeof rootApi.compileFiseProfileManifest, "function");
 assert.equal(typeof rootApi.defaultStringProfile, "object");
 assert.equal(typeof rootApi.defaultBinaryProfile, "object");
@@ -67,9 +96,26 @@ for (const obsolete of ["defaultRules", "defaultBinaryRules", "FiseBuilder"]) {
 }
 assert.equal(typeof conformanceApi.createStringConformanceEnvelope, "function");
 assert.equal(typeof conformanceApi.createBinaryConformanceEnvelope, "function");
+assert.equal(typeof conformanceApi.createFramedBinaryConformanceEnvelope, "function");
 assert.equal(typeof profilesApi.compileFiseProfileManifest, "function");
 assert.equal(typeof httpApi.createFiseResponse, "function");
 assert.equal(httpApi.FISE_MEDIA_TYPE, "application/vnd.fise");
+
+assert.deepEqual(
+	readdirSync(new URL("../examples/", import.meta.url)).sort(),
+	[
+		"README.md",
+		"basic-string.mjs",
+		"binary-payload.mjs",
+		"framed-binary.mjs",
+		"json-http.mjs",
+		"parallel-binary.mjs",
+		"profile-rotation.mjs",
+		"run-all.mjs",
+		"time-window.mjs",
+		"wasm-backend.mjs"
+	]
+);
 
 const coreEntries = readdirSync(new URL("../dist/core/", import.meta.url));
 for (const obsolete of ["lengthExtractor.js", "lengthExtractor.d.ts"]) {

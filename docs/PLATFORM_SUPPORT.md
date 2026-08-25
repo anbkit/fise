@@ -5,6 +5,7 @@
 Core string and binary profiles require:
 
 - ECMAScript modules;
+- `BigInt` for exact manifest and time-window integer arithmetic;
 - `Uint8Array`, `ArrayBuffer`, and `DataView`;
 - `TextEncoder` and fatal `TextDecoder` for HTTP text/JSON helpers;
 - `globalThis.crypto.getRandomValues`;
@@ -15,6 +16,11 @@ HTTP helpers additionally require standards-based `Response` and `Headers`;
 bounded reads require `Response.body.getReader()`.
 The optional backend requires WebAssembly compilation, instantiation, and
 memory.
+
+The optional parallel XOR backend requires dedicated module workers. Node uses
+`node:worker_threads`; browsers use a same-origin module worker emitted inside
+the package. Creation can still fail because of CSP, worker policy, URL/bundler
+rewriting, or resource limits. The backend retains workers until `close()`.
 
 ## Declared package support
 
@@ -44,7 +50,11 @@ output in a real page under a restrictive CSP and check:
 - configured WASM page-cap behavior and registered backend binding;
 - JS/WASM transform parity and cross-backend envelope decoding;
 - deeply frozen profile-manifest SHA-256 compilation plus bounded JSON/HTTP
-  `Response` round trip; and
+  `Response` round trip;
+- deterministic time-window boundary arithmetic; and
+- dedicated-worker transform parity, ordinary 1.1 async wire interoperability,
+  explicit worker close, and same-origin worker CSP;
+- indexed framed full/range/progressive byte restoration; and
 - browser console errors.
 
 Run `npm run verify:browser:serve`, open the printed URL, and record the browser
@@ -57,6 +67,9 @@ baseline, not proof that a deployment's different CSP will allow compilation.
 WASM bytes are embedded, so there is no `.wasm` fetch or MIME dependency.
 Compilation may still be blocked by CSP or runtime policy. Test the deployed
 header. `isWasmXorBinaryCipherSupported()` checks APIs, not policy approval.
+The packed smoke adds `worker-src 'self'` for the module worker;
+`isParallelXorBinaryCipherSupported()` likewise checks API presence, while
+`createParallelXorBinaryCipher()` performs actual startup.
 
 ## Package verification
 
@@ -68,7 +81,7 @@ The package gate checks local documentation links; root, `fise/conformance`,
 `fise/profiles`, and `fise/http` self-imports; expected artifacts; CLI metadata;
 public consumer type compilation; executable bin mode; ESM-only exports;
 absence of removed public 0.x symbols; and tarball installation plus JS/WASM
-round trips in an empty consumer.
+round trips and all runnable examples in an empty consumer.
 
 ## Promoting a target to supported
 
@@ -77,7 +90,8 @@ Record repeatable evidence for:
 1. exact conformance vectors;
 2. property and malformed-input tests;
 3. configured resource bounds and large input;
-4. WASM compilation, memory growth, and JS/WASM parity when advertised;
+4. WASM compilation, memory growth, JS/WASM parity, and worker startup/parity
+   when advertised;
 5. HTTP media parsing when used;
 6. production CSP and bundler output;
 7. runtime/browser/device versions; and
