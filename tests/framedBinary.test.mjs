@@ -9,7 +9,8 @@ import {
 	fiseFramedBinaryDecrypt,
 	fiseFramedBinaryDecryptProgressive,
 	fiseFramedBinaryDecryptRange,
-	fiseFramedBinaryEncrypt
+	fiseFramedBinaryEncrypt,
+	xorBinaryCipher
 } from "fise";
 
 const makeBytes = length => Uint8Array.from(
@@ -158,6 +159,135 @@ test("range restore validates only selected inner envelopes after the outer inde
 	);
 });
 
+test("range restoration performs exactly the selected frame transforms", async () => {
+	const { counters, profile } = createCountingProfile();
+	const input = makeBytes(256);
+	const container = await fiseFramedBinaryEncrypt(input, profile, {
+		frameSize: 64
+	});
+
+	for (const [range, expectedFrameTransforms] of [
+		[{ start: 5, endExclusive: 13 }, 1],
+		[{ start: 63, endExclusive: 65 }, 2],
+		[{ start: 31, endExclusive: 225 }, 4],
+		[{ start: 96, endExclusive: 96 }, 0]
+	]) {
+		counters.decrypt = 0;
+		assert.deepEqual(
+			await fiseFramedBinaryDecryptRange(container, profile, range),
+			input.slice(range.start, range.endExclusive)
+		);
+		assert.equal(counters.decrypt, expectedFrameTransforms);
+	}
+
+	const malformedUnselectedFrame = container.slice();
+	const firstFrameOffset = frameOffset(malformedUnselectedFrame, 0);
+	malformedUnselectedFrame[firstFrameOffset] ^= 0xff;
+	counters.decrypt = 0;
+	assert.deepEqual(
+		await fiseFramedBinaryDecryptRange(
+			malformedUnselectedFrame,
+			profile,
+			{ start: 64, endExclusive: 128 }
+		),
+		input.slice(64, 128)
+	);
+	assert.equal(counters.decrypt, 1);
+});
+
+test("progressive restoration is pull-driven, snapshots input, and stops without prefetch", async () => {
+	const { counters, profile } = createCountingProfile();
+	const input = makeBytes(192);
+	const source = await fiseFramedBinaryEncrypt(input, profile, { frameSize: 64 });
+	const pristine = source.slice();
+	counters.decrypt = 0;
+
+	const iterator = fiseFramedBinaryDecryptProgressive(source, profile);
+	assert.equal(counters.decrypt, 0);
+	source.fill(0);
+
+	const first = await iterator.next();
+	assert.equal(first.done, false);
+	assert.deepEqual(first.value, input.slice(0, 64));
+	assert.equal(counters.decrypt, 1);
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(counters.decrypt, 1);
+
+	const second = await iterator.next();
+	assert.equal(second.done, false);
+	assert.deepEqual(second.value, input.slice(64, 128));
+	assert.equal(counters.decrypt, 2);
+	await iterator.return();
+	assert.equal(counters.decrypt, 2);
+
+	counters.decrypt = 0;
+	for await (const frame of fiseFramedBinaryDecryptProgressive(pristine, profile)) {
+		assert.deepEqual(frame, input.slice(0, 64));
+		break;
+	}
+	await new Promise(resolve => setImmediate(resolve));
+	assert.equal(counters.decrypt, 1);
+});
+
+test("progressive restoration handles abort, empty input, and frame failure per pull", async () => {
+	const { counters, profile } = createCountingProfile();
+	const input = makeBytes(128);
+	const container = await fiseFramedBinaryEncrypt(input, profile, { frameSize: 64 });
+
+	const controller = new AbortController();
+	counters.decrypt = 0;
+	const aborted = fiseFramedBinaryDecryptProgressive(container, profile, {
+		signal: controller.signal
+	});
+	assert.deepEqual((await aborted.next()).value, input.slice(0, 64));
+	assert.equal(counters.decrypt, 1);
+	controller.abort();
+	await assert.rejects(aborted.next(), { code: "OPERATION_ABORTED" });
+	assert.equal(counters.decrypt, 1);
+
+	const empty = await fiseFramedBinaryEncrypt(new Uint8Array(), profile, {
+		frameSize: 64
+	});
+	counters.decrypt = 0;
+	const emptyIterator = fiseFramedBinaryDecryptProgressive(empty, profile);
+	assert.deepEqual(await emptyIterator.next(), { value: undefined, done: true });
+	assert.equal(counters.decrypt, 0);
+
+	counters.decrypt = 0;
+	counters.failDecrypt = true;
+	const failing = fiseFramedBinaryDecryptProgressive(container, profile);
+	const unhandled = [];
+	const onUnhandled = reason => unhandled.push(reason);
+	process.on("unhandledRejection", onUnhandled);
+	try {
+		await assert.rejects(failing.next(), { code: "INVALID_CIPHERTEXT" });
+		assert.equal(counters.decrypt, 1);
+		await new Promise(resolve => setImmediate(resolve));
+		assert.deepEqual(unhandled, []);
+	} finally {
+		process.off("unhandledRejection", onUnhandled);
+		counters.failDecrypt = false;
+	}
+});
+
+test("progressive iterator creation validates the complete outer index synchronously", async () => {
+	const container = await fiseFramedBinaryEncrypt(
+		makeBytes(128),
+		defaultBinaryProfile,
+		{ frameSize: 64 }
+	);
+	const malformed = container.slice();
+	new DataView(malformed.buffer).setUint32(
+		24 + malformed[7],
+		malformed.length,
+		false
+	);
+	assert.throws(
+		() => fiseFramedBinaryDecryptProgressive(malformed, defaultBinaryProfile),
+		{ code: "INVALID_ENVELOPE" }
+	);
+});
+
 test("framed parser rejects malformed index, version, bounds, and ranges", async () => {
 	const input = makeBytes(200);
 	const container = await fiseFramedBinaryEncrypt(input, defaultBinaryProfile, {
@@ -249,3 +379,32 @@ function concat(chunks) {
 	return output;
 }
 
+function createCountingProfile() {
+	const counters = { encrypt: 0, decrypt: 0, failDecrypt: false };
+	const profile = defineBinaryProfile({
+		...defaultBinaryProfile,
+		id: "test.counting.binary.profile.v1",
+		transform: {
+			id: "test.counting.binary.transform.v1",
+			encrypt(input, salt) {
+				counters.encrypt++;
+				return xorBinaryCipher.encrypt(input, salt);
+			},
+			decrypt(input, salt) {
+				counters.decrypt++;
+				if (counters.failDecrypt) throw new Error("instrumented frame failure");
+				return xorBinaryCipher.decrypt(input, salt);
+			}
+		}
+	});
+	return { counters, profile };
+}
+
+function frameOffset(container, frameIndex) {
+	const indexStart = 24 + container[7];
+	return new DataView(
+		container.buffer,
+		container.byteOffset,
+		container.byteLength
+	).getUint32(indexStart + frameIndex * 8, false);
+}

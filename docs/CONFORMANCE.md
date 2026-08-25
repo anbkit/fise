@@ -126,15 +126,18 @@ An alternate implementation should verify:
    trailing data, malformed fixed fields, marker changes, and limits;
 7. media type/version/profile, identity/compressed length handling, and bounded
    cancellation for HTTP helpers;
-8. stable typed errors rather than untyped parser exceptions; and
+8. stable typed errors rather than untyped parser exceptions;
 9. deterministic canonical manifest digest, deep immutability, and rotation
-   diff; and
+	 diff;
 10. strict numeric manifest types plus WASM retained-page-cap boundaries;
 11. async worker parity at non-divisible salt/chunk boundaries, cancellation,
-    close, reserved transform identity, and ordinary-wire interoperability; and
+	 close, reserved transform identity, and ordinary-wire interoperability;
 12. `FISF` magic/version, index contiguity, exact count/length, full/range/
-    progressive restoration, selected-frame failure, bounds, and the canonical
-    framed vector.
+	 progressive restoration, selected-frame failure, bounds, and the canonical
+	 framed vector; and
+13. instrumented `FISF` selected-frame transform counts, zero progressive
+	 prefetch, early termination, abort-on-next-pull, input snapshot ownership,
+	 synchronous outer-index validation, and empty completion.
 
 ## Evidence boundary
 

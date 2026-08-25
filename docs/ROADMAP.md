@@ -1,9 +1,10 @@
 # FISE Roadmap
 
-This roadmap separates implemented 1.1 behavior from future research. Proposed
-items are not package APIs or delivery promises.
+This roadmap separates the stable FISE 1.1 / FISF 1.0 protocol contracts,
+package 1.2 evidence tooling, and future research. Proposed items are not
+package APIs or delivery promises.
 
-## Version 1.1 baseline
+## Stable protocol baseline
 
 Implemented in the current source tree:
 
@@ -33,6 +34,21 @@ Implemented in the current source tree:
 - runtime adaptation benchmark with explicit claim boundaries; and
 - package, migration, specification, security, and conformance documentation.
 
+Package 1.2 adds evidence and release tooling without changing either wire
+contract:
+
+- instrumented range/progressive tests prove selected-frame transform counts,
+  zero prefetch, early termination, abort-on-next-pull, caller-container
+  snapshot ownership, empty behavior, and synchronous outer-index validation;
+- deterministic framed and worker benchmark suites with warm statistics, raw
+  samples on request, explicit setup boundaries, process-memory observations,
+  correctness preflights, and machine-readable non-claims;
+- exact-tarball empty-consumer verification shared by release-candidate and
+  packed-browser paths; and
+- an external release-evidence bundle plus tag workflow recording package,
+  source, runtime, commands, artifact metadata, and SHA-256 without digest
+  self-reference or automatic npm publication.
+
 ## Reliability and interoperability
 
 ### Malformed-input fuzz corpus
@@ -48,11 +64,12 @@ implementation language, independent review from the specification, malformed
 artifact corpora, and an explicit 16-bit-code-unit model before extending the
 evidence claim to the default string profile.
 
-### Release evidence bundle
+### Signed and retained release provenance
 
-Persist machine-readable test/runtime versions, package contents, browser
-console output, benchmark metadata, profile artifacts, and vectors for each
-release candidate.
+The repository now produces a machine-readable external evidence bundle and
+uploads it for version tags. Future work can add signed attestations, longer
+retention, npm trusted publishing, and browser-console artifacts after defining
+their trust and credential boundaries.
 
 ### Browser/device matrix
 
@@ -61,15 +78,16 @@ embedded, and Smart TV measurements before making broad support claims.
 
 ## Performance and integration
 
-### Parallel performance evidence and additional backends
+### Browser worker evidence and additional backends
 
-The built-in XOR worker backend now supplies deterministic absolute-offset
-partitioning, caller-input snapshots, cancellation, explicit close, strict
-identity, and ordinary-envelope conformance. Add raw worker startup/transfer
-samples, main-thread responsiveness, throughput, and payload-size crossover
-measurements before claiming a general speedup. SIMD and runtime-supported
-threads remain separate backend research; do not infer position separability
-for arbitrary profile callbacks.
+The built-in XOR worker backend has deterministic absolute-offset partitioning,
+caller-input snapshots, cancellation, explicit close, strict identity, and
+ordinary-envelope conformance. The Node suite now records aggregate startup,
+first/warm operation, close, throughput, and representative `FISF` results.
+Add real browser main-thread/timer evidence and representative device crossover
+measurements before making a general speedup or responsiveness claim. SIMD and
+runtime-supported threads remain separate backend research; do not infer
+position separability for arbitrary profile callbacks.
 
 ### Caller-owned output
 
@@ -78,8 +96,9 @@ memory-lifetime rules. Keep the current owned-output contract unchanged.
 
 ### Representative benchmark suite
 
-Add raw samples, confidence intervals, allocation/GC observation, compression,
-no-FISE baselines, and real application payload distributions.
+Raw samples and scoped process-memory observations now exist for framed and
+worker suites. Add confidence intervals, controlled GC/allocation tooling,
+compression and no-FISE baselines, and real application payload distributions.
 
 ## Protocol research
 

@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+This work targets package `1.2.0`. The ordinary FISE wire remains `1.1`, the
+framed FISF wire remains `1.0`, and no public runtime export is renamed or
+removed.
+
+### Added
+
+- Added deterministic `benchmark:framed` and `benchmark:worker` suites with
+  correctness preflights, mean/median/P95/P99/standard deviation, operation and
+  throughput statistics, raw samples on request, scoped process-memory
+  observations, and machine-readable non-claims.
+- Added framed matrices for full, aligned/unaligned selective range, iterator
+  creation, first/fixed pulls, complete drain, frame selection, and wire
+  overhead; added worker matrices for local versus one/two/four-worker startup,
+  first/warm operations, ordinary round trips, FISF restore, and close.
+- Added instrumented FISF tests proving exact selected-frame transform counts,
+  no hidden progressive prefetch, early stop, abort-on-next-pull, caller-input
+  snapshot ownership, empty behavior, and synchronous outer-index validation.
+- Added `release:candidate`, an external `fise.release-evidence/1` bundle,
+  `SHA256SUMS`, exact-tarball verification, and a version-tag GitHub Actions
+  workflow with no npm publication token or automatic publish step.
+
+### Changed
+
+- Clarified the README, whitepaper, specification, profile guidance, security
+  boundary, and evaluation protocol around one consistent positioning: FISE
+  targets a measurable client adaptation gap through a public profile-as-code
+  contract and keyless built-in profiles, without claiming that client-visible
+  data becomes secret or cryptographically protected.
+- Named the existing pull-driven `FISF` progressive behavior **lazy frame
+  decrypt**, scoped strictly to deferred independent-frame work—not transport
+  streaming, ordinary-envelope laziness, or lazy JSON/application values.
+- Added concise fit/non-fit guidance, a FISF mental model, and an early-stop
+  progressive example without turning the README into a protocol duplicate.
+- Aligned npm keywords with the actual application-protocol, framing,
+  interoperability, WebAssembly, worker, restoration, and obfuscation scope.
+
+### Fixed
+
+- Package verification now derives the expected package version from metadata
+  instead of pinning `1.1.0`, while still asserting package/lock agreement and
+  zero runtime dependencies.
+- Packed-consumer and packed-browser verification can consume a caller-supplied
+  tarball, so release evidence validates the exact artifact whose digest is
+  recorded instead of silently packing a second artifact.
+
 ## [1.1.0] - 2026-08-26
 
 ### Breaking changes

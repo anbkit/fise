@@ -5,6 +5,13 @@ a versioned, application-owned representation can require additional adaptation
 and maintenance from integrations built around stable plaintext payloads.
 Whether that cost is useful is empirical.
 
+FISE calls this deployment-specific work the **client adaptation gap**: the
+difference between obtaining a valid payload and reproducing or reusing the
+application's restoration path. The built-in design is keyless and the
+profile-as-code contract is public, so this evaluation must allow inspection,
+instrumentation, and reuse of the official decoder rather than treating hidden
+logic or a secret key as part of the intervention.
+
 ## Included benchmark
 
 Run:

@@ -1,16 +1,25 @@
 # FISE Engineering Whitepaper — Version 1.1
 
-**Fast Interoperable Structured Envelope: profile-governed reversible framing
-for string and binary application data**
+**Fast Interoperable Structured Envelope: public profile-as-code reversible
+framing with a keyless built-in model for client-visible application data**
 
 ## Abstract
 
+TLS protects a frontend payload in transit, but a client that is authorized to
+use that payload must eventually be able to observe it. Conventional JSON and
+byte representations are also immediately intelligible and reusable by generic
+tooling. FISE targets this **client adaptation gap**: the difference between
+obtaining a valid payload and reproducing the application-specific restoration
+path needed to use it.
+
 FISE changes the application-layer representation exchanged by a producer and
-an authorized client. Version 1.1 combines explicit wire framing, one atomic
-compatibility profile, a reversible transform, public random salt, configurable
-marker placement, canonical profile artifacts, deterministic vectors, rollout
-diffs, binary HTTP helpers, optional WebAssembly/dedicated-worker byte
-backends, and an indexed framed-binary layer.
+an authorized client. Version 1.1 combines explicit wire framing with one
+public executable **profile-as-code** compatibility contract, a reversible
+transform, public random salt, configurable marker placement, canonical profile
+artifacts, deterministic vectors, rollout diffs, binary HTTP helpers, optional
+WebAssembly/dedicated-worker byte backends, and an indexed framed-binary layer.
+The built-in model is **keyless**: FISE defines no secret-key creation,
+exchange, storage, or rotation lifecycle.
 
 FISE is designed to create representation diversity and a maintainable
 adaptation step for integrations that otherwise consume stable plaintext
@@ -22,9 +31,9 @@ Python interoperability for the manifest-compiled binary subset.
 
 The package also implements an optional dedicated-worker transform that keeps
 ordinary 1.1 wire bytes unchanged, plus a separately versioned indexed binary
-container for range and progressive byte restoration. These are bounded
-execution and framing capabilities—not evidence of universal parallel speedup,
-HTTP range fetching, streaming input, or lazy JSON parsing.
+container for range restoration and lazy, pull-driven frame decryption. These
+are bounded execution and framing capabilities—not evidence of universal
+parallel speedup, HTTP range fetching, streaming input, or lazy JSON parsing.
 
 The built-in repeating-XOR transforms carry their salt in the envelope and
 provide neither cryptographic confidentiality nor authenticity. FISE assumes
@@ -34,12 +43,18 @@ encryption remain necessary wherever their properties are required.
 
 ## 1. Introduction and use case
 
-Many first-party browser applications receive stable JSON or byte layouts from
-an endpoint. Legitimate clients benefit from that stability, but integrations
-built outside the producer's intended contract can also depend directly on the
-same representation. FISE gives the application owner an explicit, versioned
-way to replace that representation without pretending that client-visible data
-can be kept secret from the client.
+A first-party frontend must eventually observe any payload it is authorized to
+render or process. HTTPS remains necessary because it protects the network path,
+but its confidentiality does not continue past the receiving client. The
+problem addressed by FISE is therefore not a complete absence of encryption;
+it is that stable JSON and byte layouts are often immediately intelligible and
+reusable outside the producer's intended application contract.
+
+This paper calls the work between obtaining a valid response and reproducing
+the application-specific restoration path the **client adaptation gap**. FISE
+gives the application owner an explicit, versioned mechanism for adding and
+governing that step without pretending that client-visible data can be kept
+secret from the client.
 
 Consider a catalog service and a browser application controlled by one release
 owner. Instead of exposing plaintext JSON directly, the service sends a binary
@@ -62,7 +77,8 @@ authorization decisions, or regulated-data confidentiality.
 The engineering contributions of version 1.1 are the composition of:
 
 - a versioned reversible envelope with deterministic, exact framing;
-- atomic profile ownership across transform, layout, context, limits, and ID;
+- a public profile-as-code contract with atomic ownership across representation,
+  transform, layout, context, limits, and ID, plus a keyless built-in model;
 - canonical manifest compilation with content-derived identity;
 - deterministic conformance and first-class rotation artifacts;
 - no implicit profile, context, version, or legacy fallback; and
@@ -78,9 +94,9 @@ The binary design also creates a deliberate execution-model extension path.
 For the built-in byte transform, each transformed byte depends only on the byte
 at the same absolute position and the corresponding repeating-salt byte. The
 worker backend implements that partition while preserving transform identity.
-Partial and progressive restoration use a stronger boundary: the opt-in `FISF`
-container indexes independent inner 1.1 envelopes. Section 7.3 distinguishes
-what these implementations deliver from transport streaming and lazy
+Partial restoration and lazy frame decryption use a stronger boundary: the
+opt-in `FISF` container indexes independent inner 1.1 envelopes. Section 7.3
+distinguishes this pull-driven frame behavior from transport streaming and lazy
 application decoding, which remain future work.
 
 ## 2. Claims, terminology, and threat model
@@ -100,7 +116,7 @@ Revision-specific verification belongs in
 [RELEASE_EVIDENCE.md](./RELEASE_EVIDENCE.md), not in the stable narrative of
 this paper.
 
-### 2.2 Name and operational verbs
+### 2.2 Name, keyless model, and operational verbs
 
 FISE expands to **Fast Interoperable Structured Envelope**. “Structured” names
 the explicit frame and profile contract without implying cryptographic safety.
@@ -117,8 +133,22 @@ authenticity, or integrity. That warning is part of the public API documentation
 as well as this paper because a consumer may see autocomplete without reading
 the threat model.
 
+**Keyless** means that FISE's built-in profiles use no protected secret key and
+require no key provisioning, exchange, storage, or rotation. Their varying salt
+is public and travels inside the envelope. Keyless describes deployment and
+integration mechanics; it is not a security strength.
+
+**Profile as code** means that one executable, versioned compatibility contract
+owns the representation, transform, layout, context schema, limits, and public
+identity needed for restoration. A profile may come from a canonical manifest
+or trusted application callbacks. It is shipped to the authorized client,
+assumed observable, and must not be described as a hidden key.
+
 Other terms:
 
+- **client adaptation gap**: the deployment-specific work between obtaining a
+  valid payload and reproducing or reusing the restoration path needed to
+  consume it;
 - **profile**: one public compatibility identity plus representation,
   transform, layout, context schema, and resource limit;
 - **marker**: a fixed-width profile-consistency value recomputed from declared
@@ -139,12 +169,12 @@ A realistic client-side attacker may:
 - automate the official browser rather than reimplement the protocol; and
 - reproduce or modify public transform/profile behavior.
 
-FISE can break direct compatibility with tooling that expects the original
-plaintext layout. A deployed profile change can create a maintenance event for
-an independently implemented decoder. That effect must be measured as
-engineering time, throughput, correctness, maintenance, and legitimate-client
-cost—not as bits of security. If automation hooks the official decoder, profile
-diversity may add little cost.
+FISE targets the client adaptation gap by breaking direct compatibility with
+tooling that expects the original plaintext layout. A deployed profile change
+can create a maintenance event for an independently implemented decoder. That
+effect must be measured as engineering time, throughput, correctness,
+maintenance, and legitimate-client cost—not as bits of security. If automation
+hooks the official decoder, profile diversity may add little cost.
 
 FISE 1.1 does not promise secrecy, authenticated integrity, origin proof,
 authorization, replay prevention, freshness, DRM, anti-debugging, or a trusted
@@ -254,7 +284,7 @@ public and does not turn repeating XOR into cryptography.
 
 The normative grammar is in [SPEC.md](./SPEC.md).
 
-## 5. Atomic profile model
+## 5. Atomic profile-as-code model
 
 ```text
 FiseProfile
@@ -265,6 +295,12 @@ FiseProfile
 ├── external-context contract: timestamp + typed metadata
 └── resource limit: maximum envelope length
 ```
+
+The tree is an executable compatibility contract, not a secret-key container.
+Treating the profile as code makes changes reviewable, testable, content-bound
+when compiled from a manifest, and deployable as one atomic unit. Because the
+authorized client receives the profile behavior, the model assumes that an
+attacker can inspect, hook, or reproduce it.
 
 Encryption and decryption accept the profile directly. An operation cannot
 substitute an unrelated transform. Definition helpers validate and freeze owned
@@ -369,7 +405,7 @@ feature names:
 | --- | --- | --- |
 | Parallel encrypt/decrypt—more precisely, parallel binary transform | `createParallelXorBinaryCipher()` retains dedicated workers, partitions `fise.xor.u8.v1` by absolute offset, snapshots caller bytes, supports cancellation/close, and is byte-compatible with ordinary 1.1 envelopes | No measured universal speedup or automatic support for arbitrary transforms, SIMD, or shared-memory threads |
 | Partial or range restoration | `FISF` 1.0 indexes bounded independent inner 1.1 envelopes; the range API validates the outer index and restores only intersecting frames | Not direct slicing of an ordinary 1.1 envelope and not an HTTP Range fetcher |
-| Lazy or progressive restoration | An async generator restores one indexed byte frame per consumer pull with frame-level backpressure | The complete container is already in memory; output is bytes, not lazy JSON or partially safe application values |
+| Lazy frame decrypt / progressive restoration | An async generator defers each independent inner-envelope decrypt until its indexed byte frame is requested, with frame-level backpressure | The complete container is already in memory; output is bytes, not lazy JSON or partially safe application values |
 
 The worker backend preserves the existing logical transform ID and ordinary
 envelope bytes. It does not make profile validation, marker work, envelope
@@ -431,10 +467,17 @@ scoped measurements. Browser main-thread, worker transfer/startup, allocation,
 GC, mobile/device, power, compression, and end-to-end application latency remain
 deployment measurements.
 
-The worker and framed APIs have functional conformance and browser-smoke
-coverage, but no worker crossover or responsiveness benchmark is recorded in
-this paper. Their implementation must not be converted into a performance
-claim without that evidence.
+The repository also provides dedicated framed and worker suites. Framed cases
+separate full restoration, aligned/unaligned selective ranges, iterator
+creation, first pull, fixed pulls, and complete drain. Worker cases separate
+startup, first operation, warm local/worker paths, representative `FISF`
+restoration, and close. Machine-readable output records raw samples when an
+output path is supplied plus explicit `notMeasured` boundaries.
+
+These measurements remain revision-, runtime-, and machine-scoped. Aggregate
+worker timing does not isolate transfer from copying and execution; a Node
+throughput result is not browser UI responsiveness or a universal crossover
+claim. See [PERFORMANCE.md](./PERFORMANCE.md) for methodology and named runs.
 
 See [PERFORMANCE.md](./PERFORMANCE.md).
 
@@ -572,13 +615,14 @@ and operability.
 
 Its position-separable built-in binary transform now has a dedicated-worker
 backend that preserves ordinary 1.1 bytes. The distinct indexed `FISF` layer
-adds bounded range and progressive byte restoration. Transport-aware ranges,
-incremental input, and lazy application decoding remain explicit research
-directions rather than implications of those APIs.
+adds bounded range restoration and lazy, pull-driven frame decryption.
+Transport-aware ranges, incremental input, and lazy application decoding remain
+explicit research directions rather than implications of those APIs.
 
-Its strongest defensible claim is precise: FISE is a governed mechanism for
-reversible representation diversity whose adaptation effect can be measured.
-It is not a new cipher, a substitute for cryptography, or proof that a
+Its strongest defensible claim is precise: FISE is a governed public
+profile-as-code mechanism for reversible representation diversity, with
+keyless built-in transforms and an adaptation effect that can be measured. It
+is not a new cipher, a substitute for cryptography, or proof that a
 client-visible decoder imposes meaningful cost in every deployment.
 
 ## Artifact appendices

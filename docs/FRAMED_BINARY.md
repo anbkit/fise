@@ -2,7 +2,8 @@
 
 FISE Framed Binary is an opt-in indexed container for independent FISE 1.1
 binary envelopes. It supplies real frame-level range restoration and
-progressive byte output without changing the ordinary `FISE` 1.1 grammar.
+lazy, progressive byte restoration without changing the ordinary `FISE` 1.1
+grammar.
 
 The container magic is `FISF`, and its own version is `1.0`. An ordinary
 `fiseBinaryDecrypt()` call rejects it; framed APIs reject ordinary envelopes.
@@ -111,12 +112,17 @@ Range restoration is not an HTTP Range client. The current function receives
 the complete container in memory. A transport-aware API that first fetches the
 header/index and then selected envelope byte ranges remains separate work.
 
-## Progressive semantics
+## Progressive and lazy frame semantics
 
 `fiseFramedBinaryDecryptProgressive()` returns an async generator. It validates
 the outer structure at creation and restores exactly one inner envelope per
 consumer pull. This provides frame-level byte backpressure and stops work when
 the consumer stops iterating.
+
+At this boundary, **lazy decrypt** means that decryption of the next independent
+inner envelope is deferred until the consumer requests its frame. It does not
+mean that an ordinary FISE envelope, its transport, UTF-8 text, or application
+values are decrypted lazily.
 
 The input container is snapshotted in full. The API is therefore progressive
 restoration, not incremental network ingestion. It yields bytes, not parsed
@@ -156,3 +162,9 @@ authentication or encryption controls where their properties are required.
 The deterministic fixture API and canonical hexadecimal vector are documented
 in [CONFORMANCE.md](./CONFORMANCE.md).
 
+The test suite also instruments a supported application transform to prove
+selected-frame call counts, zero progressive prefetch, early termination,
+abort-on-next-pull, input snapshot ownership, and empty behavior. Performance
+methodology and scoped measurements are documented in
+[PERFORMANCE.md](./PERFORMANCE.md); those results do not change these normative
+semantics.

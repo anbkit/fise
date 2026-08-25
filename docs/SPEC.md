@@ -16,6 +16,12 @@ specification defines reversible framing, compatibility, and structural
 validation. A transform supplies any stronger property. The built-in XOR
 transforms provide neither cryptographic confidentiality nor authenticity.
 
+FISE defines no secret-key field, negotiation, derivation, storage, or rotation
+protocol. The built-in profiles are therefore keyless: reversal depends on the
+envelope, public profile behavior, and required external context rather than a
+protected key. A custom transform may compose with external key management,
+but its cryptographic properties and lifecycle are outside this specification.
+
 The key words MUST, MUST NOT, SHOULD, and MAY describe interoperability
 requirements.
 
@@ -332,8 +338,10 @@ streaming.
 
 The separate `FISF` layer snapshots a complete container but can transform only
 selected inner envelopes or yield one restored byte frame per consumer pull.
-It is not defined by concatenating 1.1 envelopes and does not imply HTTP range
-fetching, incremental transport ingestion, or lazy JSON values.
+The latter is lazy only at the independent-frame decrypt boundary: the next
+inner envelope is not decrypted until that pull. It is not defined by
+concatenating 1.1 envelopes and does not imply HTTP range fetching, incremental
+transport ingestion, or lazy JSON values.
 
 HTTP response adapters may ingest a body incrementally only to enforce an
 effective decoded-envelope maximum before complete allocation. They still

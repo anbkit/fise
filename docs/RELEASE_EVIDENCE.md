@@ -1,4 +1,4 @@
-# FISE 1.1 Release Evidence
+# FISE Release Evidence
 
 This document records revision-specific execution evidence. It is intentionally
 separate from the stable specification and whitepaper. A working-tree result is
@@ -21,6 +21,53 @@ Every external release record should include:
 - benchmark configuration plus machine-readable output;
 - package file count/size and empty-consumer checks; and
 - explicit exclusions such as untested browsers, devices, CSP, or hosted CI.
+
+## Automated package 1.2 candidate path
+
+Package 1.2 adds release tooling while the ordinary wire remains FISE 1.1 and
+the framed wire remains FISF 1.0. From a clean release checkout:
+
+```sh
+npm run release:candidate
+```
+
+The command runs the Node, runnable-example, Python interoperability, package,
+benchmark-type, and exact packed-consumer gates. It then runs the default framed
+and worker benchmark suites and writes outside the npm payload:
+
+```text
+artifacts/release/fise-<version>.tgz
+artifacts/release/npm-pack-metadata.json
+artifacts/release/framed-benchmark.json
+artifacts/release/worker-benchmark.json
+artifacts/release/release-evidence.json
+artifacts/release/SHA256SUMS
+```
+
+`artifacts/` is ignored by Git, and the package `files` allowlist excludes it
+from npm. The candidate packs once, then passes that exact tarball to the empty-
+consumer verifier. The packed-browser server accepts the same artifact:
+
+```sh
+npm run verify:browser:serve -- --tarball artifacts/release/fise-1.2.0.tgz
+```
+
+The evidence JSON records command exit status, duration, emitted counts where a
+stable count exists, package metadata, commit, tags, clean/dirty state, runtime,
+OS/architecture, and explicit unverified boundaries. It sets
+`releaseEligible: true` only when every recorded command passes, the tree is
+clean, the tarball exists, and the exact `v<package.version>` tag points at the
+commit.
+
+For a deliberately non-release working-tree check, use `--allow-dirty`; the
+bundle will remain ineligible. `--skip-benchmarks` records that exclusion and
+also keeps the bundle ineligible because not every required command passed. A tag
+job calls `release:candidate -- --require-tag` on Node 22 after separate Node
+20/22 gates, then uploads the exact tarball, raw benchmark files, checksum, and
+external evidence as a GitHub Actions artifact. It does not publish npm or add
+a registry token.
+
+## Historical pre-release snapshots
 
 ## Working-tree snapshot — 2026-08-26
 
@@ -95,31 +142,17 @@ An earlier Node 22 loopback Fetch check restored a 65,637-byte decoded FISE
 envelope whose gzip representation and declared transport length were 17,759
 bytes. This is a focused regression scenario, not HTTP-stack certification.
 
-## External final release record — pending
+## Version 1.1.0 historical boundary
 
-After creating the clean release commit, run these commands without changing
-tracked package content afterward:
+The repository now has tag `v1.1.0` at commit `b5fc3e6`. The historical
+working-tree snapshots above predate that final tag and must not be relabeled as
+tag-bound evidence. No final 1.1.0 SHA-256 was committed outside its packed
+artifact, so this document does not retroactively invent one. Registry-provided
+integrity or a newly downloaded published tarball can be recorded only with its
+source and observation date.
 
-```sh
-npm test
-npm run verify:examples
-npm run verify:interop
-npm run verify:package
-npm run verify:packed
-npm run verify:browser:serve
-```
-
-Open the printed loopback URL in each target browser and require the page to
-report `data-status="pass"` with no console errors. The server installs the
-actual tarball into an empty consumer and applies a CSP that permits same-origin
-modules and WebAssembly compilation but blocks inline script execution.
-
-Copy the final commit, tag, package entry count/size, and SHA-256 emitted by
-`verify:packed` into the release notes or signed provenance statement. Required
-but not yet established by this working-tree record:
-
-- hosted Node 20/22 CI for the final revision;
-- clean-tree commit/tag identity plus repeat of the packed-consumer gate;
-- deployed-environment confirmation under its actual CSP;
-- broader Chromium/Firefox/WebKit and representative device evidence; and
-- controlled human adaptation-study results.
+The 1.2 workflow closes that process gap for future version tags. Real browser
+execution remains a separately reported step: open the loopback URL, require
+the page to report `data-status="pass"`, and record browser/version, console,
+network, and deployed-CSP boundaries without treating one Chromium run as a
+cross-browser certification.

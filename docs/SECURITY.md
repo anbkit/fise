@@ -10,6 +10,21 @@ The built-in XOR profiles carry their salt inside the envelope. They provide a
 non-plaintext reversible representation, not confidentiality, authenticity,
 integrity, anti-replay, authorization, or DRM.
 
+## Keyless and profile-as-code boundary
+
+FISE's built-in profiles are keyless: the protocol defines no secret-key
+creation, exchange, storage, derivation, or rotation. This removes a key
+management dependency from the frontend integration; it also means the
+built-in transform has no protected secret from which cryptographic
+confidentiality could follow.
+
+The executable profile-as-code contract is public application logic. It owns
+representation, transform, layout, context, limits, and compatibility identity,
+but it is shipped to the authorized client and is assumed observable. Random
+salt varies envelope bytes; it is carried in the envelope and is not a key.
+Neither the profile nor its salt should be hidden, counted as security bits, or
+described as a client-side secret.
+
 ## Property matrix
 
 | Property | FISE 1.1 framing | Built-in XOR | Required control |
@@ -53,9 +68,11 @@ Assume a client-side attacker can:
 - run the official client under automation; and
 - reproduce public profile behavior outside the client.
 
-Under that model, FISE may impose an adaptation and maintenance step on tools
-that expect stable plaintext JSON/bytes. It cannot keep client-visible payloads
-secret from the client.
+Under that model, FISE may widen the client adaptation gap by imposing an
+integration and maintenance step on tools that expect immediately reusable
+plaintext JSON/bytes. It cannot keep client-visible payloads secret from the
+client, and an empirical deployment may observe little additional cost when
+the official restoration path is easy to hook.
 
 ## Improvements delivered by 1.1
 
@@ -138,6 +155,8 @@ cannot prevent that browser from observing plaintext after decode.
 ## Safe deployment checklist
 
 - Use FISE only for payloads the receiving client is allowed to recover.
+- Treat every shipped profile as public, versioned application code—not as a
+  protected key.
 - Publish one exact profile artifact and vector per deployment contract.
 - Rotate profiles atomically; do not auto-fallback.
 - Set profile, caller, and transport size bounds.

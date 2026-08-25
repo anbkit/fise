@@ -7,15 +7,18 @@ import {
 	mkdtempSync,
 	readFileSync,
 	rmSync,
+	statSync,
 	writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = mkdtempSync(join(tmpdir(), "fise-packed-package-"));
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+const packageJson = JSON.parse(readFileSync(join(repositoryRoot, "package.json"), "utf8"));
+const suppliedTarball = parseSuppliedTarball(process.argv.slice(2));
 
 function run(command, args, options = {}) {
 	const result = spawnSync(command, args, {
@@ -38,18 +41,32 @@ function run(command, args, options = {}) {
 }
 
 try {
-	const packOutput = run(npmCommand, [
-		"pack",
-		"--json",
-		"--pack-destination",
-		temporaryRoot
-	]);
-	const [metadata] = JSON.parse(packOutput);
+	let metadata;
+	let tarballPath;
+	if (suppliedTarball) {
+		tarballPath = suppliedTarball;
+		assert.ok(existsSync(tarballPath), `Supplied tarball does not exist: ${tarballPath}`);
+		metadata = {
+			name: packageJson.name,
+			version: packageJson.version,
+			filename: basename(tarballPath),
+			entryCount: null,
+			size: statSync(tarballPath).size
+		};
+	} else {
+		const packOutput = run(npmCommand, [
+			"pack",
+			"--json",
+			"--pack-destination",
+			temporaryRoot
+		]);
+		[metadata] = JSON.parse(packOutput);
+		tarballPath = join(temporaryRoot, metadata.filename);
+	}
 	assert.equal(metadata.name, "fise");
-	assert.equal(metadata.version, "1.1.0");
-	assert.ok(metadata.entryCount > 0);
+	assert.equal(metadata.version, packageJson.version);
+	if (metadata.entryCount !== null) assert.ok(metadata.entryCount > 0);
 
-	const tarballPath = join(temporaryRoot, metadata.filename);
 	assert.ok(existsSync(tarballPath), "npm pack did not produce the expected tarball");
 	const sha256 = createHash("sha256").update(readFileSync(tarballPath)).digest("hex");
 
@@ -132,6 +149,11 @@ if (
 	run(process.execPath, [smokePath], { cwd: consumerRoot });
 
 	const installedPackageRoot = join(consumerRoot, "node_modules/fise");
+	const installedPackageJson = JSON.parse(
+		readFileSync(join(installedPackageRoot, "package.json"), "utf8")
+	);
+	assert.equal(installedPackageJson.name, packageJson.name);
+	assert.equal(installedPackageJson.version, packageJson.version);
 	for (const relativePath of [
 		"examples/README.md",
 		"examples/basic-string.mjs",
@@ -161,10 +183,26 @@ if (
 	assert.match(examplesOutput, /Verified 8 runnable FISE examples\./);
 
 	console.log(
-		`Packed FISE ${metadata.version}: ${metadata.entryCount} files, ` +
+		`Packed FISE ${metadata.version}: ` +
+		`${metadata.entryCount === null ? "supplied exact artifact" : `${metadata.entryCount} files`}, ` +
 		`${metadata.size} bytes, SHA-256 ${sha256}; empty-consumer ESM, subpath, ` +
 		`JS, WASM, parallel workers, framed range/progressive artifacts, runnable examples, and reference checks passed.`
 	);
 } finally {
 	rmSync(temporaryRoot, { recursive: true, force: true });
+}
+
+function parseSuppliedTarball(arguments_) {
+	if (arguments_.length === 0) return undefined;
+	assert.deepEqual(
+		arguments_.slice(0, 1),
+		["--tarball"],
+		"Usage: node scripts/verify-packed-package.mjs [--tarball <path>]"
+	);
+	assert.equal(
+		arguments_.length,
+		2,
+		"Usage: node scripts/verify-packed-package.mjs [--tarball <path>]"
+	);
+	return resolve(process.cwd(), arguments_[1]);
 }

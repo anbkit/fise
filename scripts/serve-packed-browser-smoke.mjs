@@ -8,15 +8,18 @@ import {
 	readFileSync,
 	realpathSync,
 	rmSync,
+	statSync,
 	writeFileSync
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, extname, join, resolve, sep } from "node:path";
+import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = mkdtempSync(join(tmpdir(), "fise-packed-browser-"));
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+const packageJson = JSON.parse(readFileSync(join(repositoryRoot, "package.json"), "utf8"));
+const suppliedTarball = parseSuppliedTarball(process.argv.slice(2));
 const csp = [
 	"default-src 'none'",
 	"script-src 'self' 'wasm-unsafe-eval'",
@@ -48,13 +51,25 @@ function run(command, args, cwd = repositoryRoot) {
 	return result.stdout;
 }
 
-const [packMetadata] = JSON.parse(run(npmCommand, [
-	"pack",
-	"--json",
-	"--pack-destination",
-	temporaryRoot
-]));
-const tarballPath = join(temporaryRoot, packMetadata.filename);
+let packMetadata;
+let tarballPath;
+if (suppliedTarball) {
+	tarballPath = suppliedTarball;
+	assert.ok(existsSync(tarballPath), `Supplied tarball does not exist: ${tarballPath}`);
+	packMetadata = {
+		filename: basename(tarballPath),
+		entryCount: null,
+		size: statSync(tarballPath).size
+	};
+} else {
+	[packMetadata] = JSON.parse(run(npmCommand, [
+		"pack",
+		"--json",
+		"--pack-destination",
+		temporaryRoot
+	]));
+	tarballPath = join(temporaryRoot, packMetadata.filename);
+}
 const consumerRoot = join(temporaryRoot, "consumer");
 mkdirSync(consumerRoot);
 writeFileSync(
@@ -68,6 +83,11 @@ run(
 );
 
 const packageDistRoot = realpathSync(join(consumerRoot, "node_modules/fise/dist"));
+const installedPackageJson = JSON.parse(
+	readFileSync(join(consumerRoot, "node_modules/fise/package.json"), "utf8")
+);
+assert.equal(installedPackageJson.name, packageJson.name);
+assert.equal(installedPackageJson.version, packageJson.version);
 const smokeHtmlPath = join(repositoryRoot, "tests/browser/wasm-smoke.html");
 const smokeModulePath = join(repositoryRoot, "tests/browser/wasm-smoke.mjs");
 let cleaned = false;
@@ -144,6 +164,21 @@ server.listen(0, "127.0.0.1", () => {
 	assert.ok(address && typeof address === "object");
 	console.log(
 		`FISE packed-browser smoke server: http://127.0.0.1:${address.port}/ ` +
-		`(${packMetadata.entryCount} package entries, CSP enabled)`
+		`(${packMetadata.entryCount === null ? "supplied exact artifact" : `${packMetadata.entryCount} package entries`}, CSP enabled)`
 	);
 });
+
+function parseSuppliedTarball(arguments_) {
+	if (arguments_.length === 0) return undefined;
+	assert.deepEqual(
+		arguments_.slice(0, 1),
+		["--tarball"],
+		"Usage: node scripts/serve-packed-browser-smoke.mjs [--tarball <path>]"
+	);
+	assert.equal(
+		arguments_.length,
+		2,
+		"Usage: node scripts/serve-packed-browser-smoke.mjs [--tarball <path>]"
+	);
+	return resolve(process.cwd(), arguments_[1]);
+}

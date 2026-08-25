@@ -3,13 +3,14 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 
 const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
 const packageLock = JSON.parse(readFileSync(new URL("../package-lock.json", import.meta.url), "utf8"));
-assert.equal(packageJson.version, "1.1.0");
+assert.match(packageJson.version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/);
 assert.equal(packageLock.version, packageJson.version);
 assert.equal(packageLock.packages[""].version, packageJson.version);
 assert.equal(packageJson.type, "module");
 assert.equal(packageJson.sideEffects, false);
 assert.equal(packageJson.bin.fise, "dist/cli.js");
 assert.equal(packageJson.engines.node, ">=20");
+assert.equal(packageJson.dependencies, undefined);
 assert.deepEqual(packageJson.files, [
 	"dist",
 	"docs/*.md",

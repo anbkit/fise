@@ -1,0 +1,95 @@
+name: Release evidence
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-evidence-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: [20.x, 22.x]
+
+    steps:
+      - name: Checkout exact tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Setup Python reference runtime
+        if: matrix.node-version == '22.x'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Run Node tests
+        run: npm test
+
+      - name: Verify runnable examples
+        run: npm run verify:examples
+
+      - name: Verify Python interoperability
+        if: matrix.node-version == '22.x'
+        run: npm run verify:interop
+
+      - name: Verify package contract
+        run: npm run verify:package
+
+      - name: Verify benchmark sources
+        run: npm run verify:benchmarks
+
+      - name: Verify a packed empty consumer
+        run: npm run verify:packed
+
+  artifact:
+    needs: verify
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout exact tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Setup Python reference runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install exact dependencies
+        run: npm ci
+
+      - name: Build exact release candidate and evidence
+        run: npm run release:candidate -- --require-tag
+
+      - name: Upload exact tarball and external evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fise-${{ github.ref_name }}-release-evidence
+          path: artifacts/release/
+          if-no-files-found: error
+          retention-days: 90

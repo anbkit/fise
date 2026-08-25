@@ -5,6 +5,17 @@ ID, representation, reversible transform, layout, external-context contract,
 and resource limit. This prevents producer and consumer code from combining a
 layout from one profile with a transform from another by accident.
 
+FISE calls this model **profile as code**: one executable, versioned contract
+owns every restoration-relevant decision and changes atomically. It is a
+governance and interoperability model, not a secrecy mechanism. The profile is
+shipped to the authorized client, its ID is public, and its behavior must be
+assumed observable and reproducible.
+
+The built-in profiles are also **keyless**. They require no secret-key
+provisioning, exchange, storage, or rotation. Their random salt is public and
+carried in the envelope; removing key management does not create cryptographic
+confidentiality.
+
 ## Choose a profile path
 
 Use `defaultStringProfile` or `defaultBinaryProfile` when the built-in wire

@@ -38,8 +38,18 @@ for await (const frame of fiseFramedBinaryDecryptProgressive(
 }
 assert.deepEqual(join(progressiveFrames), input);
 
+let pulledFrames = 0;
+for await (const _frame of fiseFramedBinaryDecryptProgressive(
+	container,
+	defaultBinaryProfile
+)) {
+	pulledFrames++;
+	if (pulledFrames === 2) break;
+}
+assert.equal(pulledFrames, 2);
+
 console.log(
-	`PASS framed-binary: full + range + ${progressiveFrames.length} progressive byte frames`
+	`PASS framed-binary: full + range + ${progressiveFrames.length} progressive byte frames + early stop`
 );
 
 function join(frames) {
@@ -53,4 +63,3 @@ function join(frames) {
 	}
 	return output;
 }
-
