@@ -7,9 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-This work targets package `1.2.0`. The ordinary FISE wire remains `1.1`, the
-framed FISF wire remains `1.0`, and no public runtime export is renamed or
-removed.
+## [1.2.0] - 2026-08-26
+
+Package `1.2.0` keeps the ordinary FISE wire at `1.1` and the framed FISF wire
+at `1.0`. No public runtime export is renamed or removed.
 
 ### Added
 
@@ -438,6 +439,9 @@ removed.
   - Use cases (`docs/USE_CASES.md`)
   - Specification (`docs/SPEC.md`)
 
+[Unreleased]: https://github.com/anbkit/fise/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/anbkit/fise/compare/v1.1.0...v1.2.0
+[1.1.0]: https://github.com/anbkit/fise/releases/tag/v1.1.0
 [0.1.5]: https://github.com/anbkit/fise/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/anbkit/fise/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/anbkit/fise/compare/v0.1.2...v0.1.3
