@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-26
+
+FISE 2.0 is a clean package and wire redesign. Producers and consumers must
+upgrade together and regenerate stored, queued, or cached envelopes. No 1.x API
+or decoder is retained.
+
+### Breaking changes
+
+- Replaced every public function entry point with a profile-bound `Fise` class:
+  `new Fise(generatedProfile).encrypt(data, context)` and `decrypt(...)`.
+- Removed string/binary profile types, default profiles, `FiseBuilder`, public
+  profile definitions, manifests, rotation artifacts, time-window rules,
+  conformance subpaths, and HTTP/JSON-specific encryption APIs.
+- Replaced separate string and binary wires with one strict `Uint8Array` FISE
+  2.0 envelope and one byte-only generated profile ABI.
+- Added a transformed payload metadata segment that restores either a canonical
+  JSON-safe value—including strings—or raw binary bytes through the same API.
+- Replaced FISF 1.0 with FISF 2.0 and rejected every legacy version.
+- Replaced semantic context objects and per-envelope salt with an optional
+  positional scalar array. The profile derives a circular Base64URL context
+  segment, and package 2.0 envelopes are deterministic for equal inputs.
+- Removed the independent Python 1.1 reference because generated profile code,
+  rather than a reproducible manifest, is now the compatibility artifact.
+
+### Added
+
+- Added `fise generate <output-file>`, a stateless generator that uses CSPRNG
+  input once per invocation and emits a new immutable `Profile` instance.
+- Added typed reversible generation IR, automatic inverse derivation, semantic
+  dead-stage rejection, fused JavaScript kernels, generated WASM compilation,
+  opaque semantic fingerprints, and atomic output writes.
+- Added one structured/binary codec with strict canonical JSON, plain-data and
+  context validation, transformed data-type metadata, and owned byte outputs.
+- Added generated context-segment offset/length parameters and passed the frozen
+  positional context snapshot through mixer, offset, marker, forward, and
+  reverse callbacks.
+- Added profile-bound `encryptFramed`, `decryptFramed`, `decryptRange`, and
+  `decryptProgressive` methods for full, partial, and lazy frame restoration.
+- Added `withWasm()` and retained `parallel()` runtimes compiled from the same
+  generated profile semantics, including cross-backend and frame parity tests.
+- Added FISE/FISF 2.0 specifications, generated-profile documentation, a new
+  security boundary and whitepaper, and six dependency-free examples covering
+  session-bound API, binary, framing, backends, and failure boundaries.
+- Added a plain-language Profile/context mental model and realistic short-lived
+  session, user, tenant, connection, resource, and sequence examples.
+- Added strict TypeScript compatibility for generated `.ts` profile modules
+  and JSON-compatibility inference for ordinary named domain interfaces.
+
+### Hardening
+
+- Enforced canonical JSON on restore, a 65,536-frame FISF ceiling, early
+  envelope-size checks, and bounded sequential frame scheduling for async
+  worker-backed operations.
+- Bound advertised FISF plaintext before allocation and used the outer header's
+  consistency marker to bind zero-frame containers and empty-range restores to
+  the selected profile and context.
+- Restricted generated `Profile` construction, mixer lanes, structured object
+  and array prototypes, and proxy wrappers; snapshotted caller-owned bytes
+  through typed-array intrinsics before profile callbacks; and made closed
+  parallel runtimes reject every operation consistently.
+- Made worker adapters retain fatal lifecycle state so current and future work
+  rejects instead of hanging after an unexpected worker exit.
+- Added a packed real-browser smoke surface for generated profiles, WASM,
+  module workers, and FISF under a restrictive CSP with a hashed import map.
+- Promoted the packed Chromium smoke to an automated CI, release-check, and
+  exact-tarball release-evidence gate.
+
+### Security
+
+- Clarified that generated execution diversity targets profile-specific static
+  adaptation cost and does not provide cryptographic confidentiality,
+  authenticity, integrity, authorization, expiry, replay prevention, or
+  resistance to runtime instrumentation.
+- Documented deterministic equality leakage and that omitted context-derived
+  data is neither a secret key nor an authentication mechanism.
+
 ## [1.2.0] - 2026-08-26
 
 Package `1.2.0` keeps the ordinary FISE wire at `1.1` and the framed FISF wire
@@ -439,7 +515,8 @@ at `1.0`. No public runtime export is renamed or removed.
   - Use cases (`docs/USE_CASES.md`)
   - Specification (`docs/SPEC.md`)
 
-[Unreleased]: https://github.com/anbkit/fise/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/anbkit/fise/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/anbkit/fise/compare/v1.2.0...v2.0.0
 [1.2.0]: https://github.com/anbkit/fise/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/anbkit/fise/releases/tag/v1.1.0
 [0.1.5]: https://github.com/anbkit/fise/compare/v0.1.4...v0.1.5

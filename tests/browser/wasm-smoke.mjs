@@ -1,172 +1,101 @@
 import {
+	Fise,
 	FISE_WIRE_VERSION,
-	compileFiseProfileManifest,
-	createParallelXorBinaryCipher,
-	createWasmXorBinaryCipher,
-	defaultBinaryProfile,
-	defaultStringProfile,
-	fiseBinaryDecrypt,
-	fiseBinaryEncrypt,
-	fiseBinaryDecryptAsync,
-	fiseBinaryEncryptAsync,
-	fiseDecrypt,
-	fiseEncrypt,
-	fiseFramedBinaryDecrypt,
-	fiseFramedBinaryDecryptProgressive,
-	fiseFramedBinaryDecryptRange,
-	fiseFramedBinaryEncrypt,
-	resolveFiseTimeWindow,
-	withBinaryBackend,
-	xorBinaryCipher
-} from "/dist/index.js";
-import {
-	createFiseJsonResponse,
-	readFiseJsonResponse
-} from "/dist/http.js";
+	FISF_WIRE_VERSION,
+	isParallelSupported,
+	isWasmSupported
+} from "fise";
+import profile from "/profile.mjs";
 
 const result = document.querySelector("#result");
-const equal = (left, right) =>
-	left.length === right.length && left.every((byte, index) => byte === right[index]);
 
 try {
 	const pageResponse = await fetch(location.href, { cache: "no-store" });
 	const csp = pageResponse.headers.get("content-security-policy") ?? "";
-	const compiled = await compileFiseProfileManifest({
-		schema: "fise.profile/1",
-		name: "browser.smoke",
-		revision: 1,
-		representation: "binary",
-		transform: "xor-u8-v1",
-		saltRange: { min: 10, max: 12 },
-		marker: { kind: "uint-be", width: 2 },
-		offset: {
-			kind: "affine",
-			lengthMultiplier: 7,
-			saltMultiplier: 3
-		},
-		limits: { maxEnvelopeLength: 1_000_000 }
-	});
-	const jsonResponse = createFiseJsonResponse(
-		{ browser: true, profileId: compiled.profileId },
-		compiled.profile
-	);
-	const restoredJson = await readFiseJsonResponse(jsonResponse, compiled.profile);
-	const timeWindow = resolveFiseTimeWindow(60_000, { durationMs: 60_000 });
-	const wasmCipher = await createWasmXorBinaryCipher({ maxMemoryPages: 8 });
-	const text = "FISE browser round trip \ud83c\udf0d";
-	const textEnvelope = fiseEncrypt(text, defaultStringProfile);
-	const restoredText = fiseDecrypt(textEnvelope, defaultStringProfile);
+	if (!csp.includes("'wasm-unsafe-eval'") || !csp.includes("worker-src 'self'")) {
+		throw new Error("packed browser CSP does not authorize the tested WASM/worker paths");
+	}
+	if (!isWasmSupported() || !isParallelSupported()) {
+		throw new Error("this browser does not expose WebAssembly and dedicated workers");
+	}
+	if (FISE_WIRE_VERSION.major !== 2 || FISF_WIRE_VERSION.major !== 2) {
+		throw new Error("unexpected FISE/FISF wire version");
+	}
+
+	const javascript = new Fise(profile);
+	const context = [23, "packed-browser"];
+	const structured = { browser: true, text: "FISE 2.0 \ud83c\udf0d", values: [1, null, false] };
 	const input = Uint8Array.from(
-		{ length: 256 * 1024 },
+		{ length: 300_007 },
 		(_, index) => (index * 31 + 17) & 0xff
 	);
-	const salt = Uint8Array.from({ length: 67 }, (_, index) => index + 1);
-	const parity = wasmCipher.encrypt(input, salt);
-	const expected = xorBinaryCipher.encrypt(input, salt);
-	const jsEnvelope = fiseBinaryEncrypt(input, defaultBinaryProfile);
-	const jsDecrypted = fiseBinaryDecrypt(jsEnvelope, defaultBinaryProfile);
-	const wasmProfile = withBinaryBackend(defaultBinaryProfile, wasmCipher);
-	const wasmEnvelope = fiseBinaryEncrypt(input, wasmProfile);
-	const wasmDecrypted = fiseBinaryDecrypt(wasmEnvelope, wasmProfile);
-	const jsEnvelopeViaWasm = fiseBinaryDecrypt(jsEnvelope, wasmProfile);
-	const wasmEnvelopeViaJs = fiseBinaryDecrypt(wasmEnvelope, defaultBinaryProfile);
-	const parallel = await createParallelXorBinaryCipher({
-		workerCount: 2,
-		minimumParallelBytes: 0
-	});
-	let parallelDecrypted;
-	let framedDecrypted;
-	let framedRange;
-	let progressiveLength = 0;
+	assertDeepEqual(javascript.decrypt(javascript.encrypt(structured, context), context), structured);
+	assertBytes(javascript.decrypt(javascript.encrypt(input, context), context), input);
+
+	const wasm = await javascript.withWasm();
+	assertBytes(wasm.decrypt(javascript.encrypt(input, context), context), input);
+	assertBytes(javascript.decrypt(wasm.encrypt(input, context), context), input);
+
+	const parallel = await javascript.parallel({ workerCount: 2, minimumParallelBytes: 0 });
+	let frameCount = 0;
 	try {
-		const parallelEnvelope = await fiseBinaryEncryptAsync(
-			input,
-			defaultBinaryProfile,
-			{ backend: parallel }
+		assertBytes(await parallel.decrypt(javascript.encrypt(input, context), context), input);
+		assertBytes(javascript.decrypt(await parallel.encrypt(input, context), context), input);
+
+		const framed = await parallel.encryptFramed(input, context, { frameSize: 64 * 1024 });
+		assertBytes(await parallel.decryptFramed(framed, context), input);
+		assertBytes(
+			await parallel.decryptRange(
+				framed,
+				{ start: 65_000, endExclusive: 232_000 },
+				context
+			),
+			input.slice(65_000, 232_000)
 		);
-		parallelDecrypted = await fiseBinaryDecryptAsync(
-			parallelEnvelope,
-			defaultBinaryProfile,
-			{ backend: parallel }
-		);
-		const framed = await fiseFramedBinaryEncrypt(input, defaultBinaryProfile, {
-			frameSize: 64 * 1024,
-			concurrency: 2,
-			backend: parallel
-		});
-		framedDecrypted = await fiseFramedBinaryDecrypt(
-			framed,
-			defaultBinaryProfile,
-			{ concurrency: 2, backend: parallel }
-		);
-		framedRange = await fiseFramedBinaryDecryptRange(
-			framed,
-			defaultBinaryProfile,
-			{ start: 65_000, endExclusive: 132_000 },
-			{ backend: parallel }
-		);
-		for await (const frame of fiseFramedBinaryDecryptProgressive(
-			framed,
-			defaultBinaryProfile,
-			{ backend: parallel }
-		)) {
-			progressiveLength += frame.length;
+		const frames = [];
+		for await (const frame of parallel.decryptProgressive(framed, context)) {
+			frames.push(frame);
+			frameCount++;
 		}
+		assertBytes(join(frames), input);
 	} finally {
 		await parallel.close();
 	}
-	let memoryCapRejected = false;
-	try {
-		wasmCipher.encrypt(new Uint8Array(8 * 64 * 1024), new Uint8Array([1]));
-	} catch (error) {
-		memoryCapRejected = error?.code === "WASM_MEMORY_LIMIT";
-	}
 
-	const hasBinaryV11Header =
-		wasmEnvelope[0] === 0x46 &&
-		wasmEnvelope[1] === 0x49 &&
-		wasmEnvelope[2] === 0x53 &&
-		wasmEnvelope[3] === 0x45 &&
-		wasmEnvelope[4] === 1 &&
-		wasmEnvelope[5] === 1;
-	if (
-		FISE_WIRE_VERSION.major !== 1 ||
-		FISE_WIRE_VERSION.minor !== 1 ||
-		!csp.includes("'wasm-unsafe-eval'") ||
-		!csp.includes("worker-src 'self'") ||
-		restoredJson.browser !== true ||
-		restoredJson.profileId !== compiled.profileId ||
-		!compiled.profileId.startsWith("browser.smoke.v1.") ||
-		!Object.isFrozen(compiled.manifest) ||
-		!Object.isFrozen(compiled.manifest.offset) ||
-		timeWindow.timestamp !== 1 ||
-		timeWindow.startMs !== 60_000 ||
-		timeWindow.endExclusiveMs !== 120_000 ||
-		restoredText !== text ||
-		!textEnvelope.startsWith("FISE0101") ||
-		!hasBinaryV11Header ||
-		!equal(parity, expected) ||
-		!equal(jsDecrypted, input) ||
-		!equal(wasmDecrypted, input) ||
-		!equal(jsEnvelopeViaWasm, input) ||
-		!equal(wasmEnvelopeViaJs, input) ||
-		!equal(parallelDecrypted, input) ||
-		!equal(framedDecrypted, input) ||
-		!equal(framedRange, input.slice(65_000, 132_000)) ||
-		progressiveLength !== input.length ||
-		!memoryCapRejected
-	) {
-		throw new Error("Manifest, time window, CSP, HTTP, string, JS/WASM/worker binary, or framed check failed");
-	}
-
-	result.value = "PASS: packed manifest + time window + CSP + HTTP + string + JS/WASM/worker + framed range/progressive";
+	result.value = "PASS: packed FISE 2.0 profile + structured/binary + JS/WASM/workers + FISF range/progressive";
 	result.textContent = result.value;
 	document.documentElement.dataset.status = "pass";
-	document.documentElement.dataset.profile = compiled.profileId;
+	document.documentElement.dataset.profile = profile.fingerprint;
+	document.documentElement.dataset.frames = String(frameCount);
 	document.documentElement.dataset.csp = "pass";
 } catch (error) {
-	result.value = `FAIL: ${error.message}`;
+	result.value = `FAIL: ${error instanceof Error ? error.message : String(error)}`;
 	result.textContent = result.value;
 	document.documentElement.dataset.status = "fail";
 	throw error;
+}
+
+function assertBytes(actual, expected) {
+	if (!(actual instanceof Uint8Array) || actual.length !== expected.length) {
+		throw new Error("restored byte length differs");
+	}
+	for (let index = 0; index < actual.length; index++) {
+		if (actual[index] !== expected[index]) throw new Error(`restored byte ${index} differs`);
+	}
+}
+
+function assertDeepEqual(actual, expected) {
+	if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+		throw new Error("restored structured value differs");
+	}
+}
+
+function join(frames) {
+	const output = new Uint8Array(frames.reduce((length, frame) => length + frame.length, 0));
+	let offset = 0;
+	for (const frame of frames) {
+		output.set(frame, offset);
+		offset += frame.length;
+	}
+	return output;
 }

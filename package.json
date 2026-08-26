@@ -1,7 +1,7 @@
 {
 	"name": "fise",
-	"version": "1.2.0",
-	"description": "Fast Interoperable Structured Envelope (FISE) - a versioned, profile-governed application-layer envelope for string and binary payloads.",
+	"version": "2.0.0",
+	"description": "Fast Interoperable Structured Envelope (FISE) - generated, profile-governed application representations for structured and binary data.",
 	"type": "module",
 	"sideEffects": false,
 	"bin": {
@@ -14,17 +14,9 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
-		"./conformance": {
-			"types": "./dist/conformance.d.ts",
-			"import": "./dist/conformance.js"
-		},
-		"./profiles": {
-			"types": "./dist/profiles.d.ts",
-			"import": "./dist/profiles.js"
-		},
-		"./http": {
-			"types": "./dist/http.d.ts",
-			"import": "./dist/http.js"
+		"./profile-runtime": {
+			"types": "./dist/profileRuntime.d.ts",
+			"import": "./dist/profileRuntime.js"
 		}
 	},
 	"files": [
@@ -32,29 +24,25 @@
 		"docs/*.md",
 		"examples/*.mjs",
 		"examples/README.md",
-		"reference/python/*.py",
-		"reference/python/fixtures/*.json",
-		"reference/python/README.md",
 		"CHANGELOG.md",
 		"CONTRIBUTING.md"
 	],
 	"scripts": {
 		"clean": "node scripts/clean-dist.mjs",
 		"build": "npm run clean && tsc -p tsconfig.json && node scripts/mark-cli-executable.mjs",
-		"test": "npm run build && node --test tests/*.mjs",
-		"verify:types": "tsc --noEmit --strict --target ES2020 --module ESNext --moduleResolution bundler --lib ES2020,DOM --types node --skipLibCheck tests/types/public-api.ts",
+		"test": "npm run build && node --test tests/v2/*.test.mjs",
+		"verify:types": "tsc --noEmit --strict --target ES2020 --module ESNext --moduleResolution bundler --lib ES2020,DOM --types node --skipLibCheck tests/v2/public-api.ts",
 		"verify:docs": "node scripts/verify-docs.mjs",
 		"verify:benchmarks": "npm run build && tsc --noEmit --strict --target ES2020 --module ESNext --moduleResolution bundler --lib ES2020,DOM --types node --skipLibCheck benchmarks/*.ts",
 		"verify:examples": "npm run build && node examples/run-all.mjs",
-		"verify:interop": "python3 -m unittest discover -s reference/python -p 'test_*.py'",
 		"verify:package": "npm run build && npm run verify:docs && npm run verify:types && node scripts/verify-package.mjs",
 		"verify:packed": "npm run build && node scripts/verify-packed-package.mjs",
+		"verify:browser": "npm run build && node scripts/verify-packed-browser-smoke.mjs",
 		"verify:browser:serve": "npm run build && node scripts/serve-packed-browser-smoke.mjs",
-		"release:check": "npm test && npm run verify:examples && npm run verify:interop && npm run verify:package && npm run verify:benchmarks && npm run verify:packed",
+		"release:check": "npm test && npm run verify:examples && npm run verify:package && npm run verify:benchmarks && npm run verify:packed && npm run verify:browser",
 		"prepublishOnly": "npm run release:check",
-		"benchmark": "tsx benchmarks/benchmark.ts",
-		"benchmark:wasm": "tsx benchmarks/wasm.ts",
-		"benchmark:adaptation": "tsx benchmarks/adaptation.ts",
+		"benchmark": "npm run build && tsx benchmarks/benchmark.ts",
+		"benchmark:wasm": "npm run build && tsx benchmarks/wasm.ts",
 		"benchmark:framed": "npm run build && tsx benchmarks/framed.ts",
 		"benchmark:worker": "npm run build && tsx benchmarks/worker.ts",
 		"release:candidate": "node scripts/release-candidate.mjs",
@@ -64,7 +52,7 @@
 		"application-protocol",
 		"data-envelope",
 		"binary-framing",
-		"profile-manifest",
+		"generated-profile",
 		"range-restoration",
 		"progressive-restoration",
 		"interoperability",
@@ -88,6 +76,7 @@
 	"homepage": "https://github.com/anbkit/fise#readme",
 	"devDependencies": {
 		"@types/node": "^24.10.1",
+		"playwright": "^1.62.1",
 		"tsx": "^4.20.6",
 		"typescript": "^5.6.0"
 	}

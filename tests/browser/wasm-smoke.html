@@ -11,6 +11,14 @@
 			<h1>FISE packed-browser smoke test</h1>
 			<output id="result">RUNNING</output>
 		</main>
+		<script type="importmap">
+			{
+				"imports": {
+					"fise": "/dist/index.js",
+					"fise/profile-runtime": "/dist/profileRuntime.js"
+				}
+			}
+		</script>
 		<script type="module" src="/smoke.mjs"></script>
 	</body>
 </html>

@@ -1,260 +1,113 @@
-# FISE 1.1 Profiles
+# Generated profiles
 
-A `FiseProfile` is the smallest compatibility unit in 1.1. It owns the public
-ID, representation, reversible transform, layout, external-context contract,
-and resource limit. This prevents producer and consumer code from combining a
-layout from one profile with a transform from another by accident.
+A FISE 2.0 profile is immutable executable code. It owns one deterministic,
+length-preserving, reversible byte pipeline and the layout calculations needed
+to read and write its envelopes.
 
-FISE calls this model **profile as code**: one executable, versioned contract
-owns every restoration-relevant decision and changes atomically. It is a
-governance and interoperability model, not a secrecy mechanism. The profile is
-shipped to the authorized client, its ID is public, and its behavior must be
-assumed observable and reproducible.
+## Lifecycle
 
-The built-in profiles are also **keyless**. They require no secret-key
-provisioning, exchange, storage, or rotation. Their random salt is public and
-carried in the envelope; removing key management does not create cryptographic
-confidentiality.
-
-## Choose a profile path
-
-Use `defaultStringProfile` or `defaultBinaryProfile` when the built-in wire
-behavior is sufficient. Use a compiled manifest when multiple services,
-deployments, or languages need reproducible behavior. Use `defineStringProfile`
-or `defineBinaryProfile` only when the declarative compiler cannot express the
-required layout.
-
-These are different interoperability classes, even though they share the same
-runtime `FiseProfile` interface:
-
-| Profile path | Behavior source | Identity | Interoperability boundary |
-| --- | --- | --- | --- |
-| Built-in default | FISE specification and package | Fixed public ID | String is defined as JavaScript UTF-16 code units; binary has independent Python evidence |
-| Manifest-compiled | `fise.profile/1` declarative artifact | SHA-256 content-derived ID | Portable only across implementations of the declared compiler surface |
-| Application-defined runtime | Trusted callbacks supplied by the application | Developer-assigned ID | Local contract; cross-language behavior is not implied |
-
-“Manifest-compiled” and “application-defined runtime” are documentation terms,
-not additional public TypeScript types. A compiled profile still becomes a
-normal immutable `FiseProfile` at runtime.
-
-## Runtime interface
-
-```ts
-type FiseProfile = FiseStringProfile | FiseBinaryProfile;
-
-interface FiseLayoutInput {
-  transformedLength: number;
-  saltLength: number;
-}
-
-interface FiseLayout<T> {
-  markerSize: number;
-  saltRange?: { min: number; max: number };
-  offset(input: FiseLayoutInput, ctx: FiseContext): number;
-  createMarker(input: FiseLayoutInput, ctx: FiseContext): T;
-}
+```text
+npx fise generate path
+        ↓
+generated module exports Profile instance
+        ↓
+Git versions that source file
+        ↓
+new Fise(profile)
 ```
 
-The decoder already knows salt length from the header. A profile creates the
-expected marker; it never decodes the marker to discover length. This removes
-the old inverse-codec ambiguity and salt-range candidate scanning.
+There is no separate profile database. A generation run is not reproducible by
+design: running the command again creates a different file. If an application
+needs code for an earlier envelope, it restores the earlier generated module
+from Git.
 
-Required profile, layout, and transform members must be own properties. The
-definition helpers clone and freeze those members, including nested salt-range,
-context-field, and limit objects. Prefer plain objects and closure state over
-class/prototype methods.
+## Generated-module contract
 
-Runtime options and metadata are also plain-data contracts. FISE ignores
-inherited properties, rejects accessors and symbol keys, and validates one
-immutable snapshot so layout callbacks cannot observe a different value later
-in the same operation.
-
-## Context
+Conceptually, a generated module contains:
 
 ```ts
-context: {
-  timestamp: "required",
-  metadata: {
-    tenant: { type: "number", required: true },
-    preview: { type: "boolean" }
-  },
-  allowAdditionalMetadata: false
-}
+import { Profile } from "fise/profile-runtime";
+
+export default Profile.generated(
+  opaqueFingerprint,
+  contextSegmentOffset,
+  contextSegmentLength,
+  contextMixer,
+  offsetCalculator,
+  markerCalculator,
+  specializedForwardKernel,
+  specializedReverseKernel,
+  generatedWasmModule
+);
 ```
 
-Producer and consumer must supply the same relevant context. Context is not in
-the envelope. FISE validates presence and primitive type, but it cannot prove
-that an application chose the correct business value.
+This is a low-level ABI emitted by the CLI, not a builder API. Applications
+normally import the default instance unchanged. Every callback receives the
+frozen positional context snapshot; offset, marker, forward, and reverse also
+receive the derived context segment and mixed context lanes. Expert users can
+therefore make a JavaScript-only callback context-aware, but changing generated
+callbacks invalidates the embedded WASM parity and semantic fingerprint unless
+those artifacts are regenerated and verified together.
 
-If layout behavior uses a time bucket, derive it deterministically:
+## Generation algorithm
+
+Each invocation uses Node's cryptographically secure random source to choose:
+
+- one random `uint32` context-segment offset and a 12–32 byte segment length;
+- four to seven reversible byte-local stages;
+- stage order and non-neutral parameters;
+- profile-specific context-mixer constants;
+- offset and marker calculations.
+
+The primitive set includes XOR masks, addition modulo 256, bit rotation, and
+affine byte maps with odd multipliers and computed modular inverses. The
+runtime converts the positional context array to canonical JSON and unpadded
+Base64URL, then cuts a circular profile-specific segment. Masks depend on that
+segment, absolute byte position, and mixed lanes from the complete encoding.
+
+Before emission, the generator:
+
+1. builds typed internal IR;
+2. derives the inverse by reversing stage order and operation semantics;
+3. rejects identity or removable stages on fixed semantic vectors;
+4. checks round trips over empty, boundary, all-byte, and larger inputs;
+5. checks offset bounds;
+6. fuses stages into one forward loop and one reverse loop;
+7. compiles the same semantics into a WASM module;
+8. hashes the semantic IR into a 128-bit opaque fingerprint;
+9. writes the module atomically.
+
+The IR and randomness are not saved. Constants and functions present in the
+generated file are the profile itself, not a regeneration record.
+
+## Multiple profiles
+
+Applications may generate as many files as needed:
+
+```sh
+npx fise generate ./src/api.profile.ts
+npx fise generate ./src/media.profile.ts
+```
 
 ```ts
-import { resolveFiseTimeWindow } from "fise";
-
-const window = resolveFiseTimeWindow(requestTimeMs, {
-  durationMs: 60_000,
-  originMs: 0
-});
-const context = { timestamp: window.timestamp };
+const api = new Fise(apiProfile);
+const media = new Fise(mediaProfile);
 ```
 
-Resolve from one shared request/session anchor or coordinate the returned
-timestamp out of band. Calling `Date.now()` independently on producer and
-consumer can cross a window boundary. Define rollover explicitly; automatic
-fallback to earlier buckets is intentionally absent. The helper does not add
-expiry, freshness, or replay prevention.
+This separation is an application decision, not a text/binary distinction.
+Every profile can process both structured values and bytes. Separate profiles
+may be useful for independent deployment owners or workload policies.
 
-## Marker and offset
+## Fingerprint
 
-`createMarker` receives declared transformed and salt lengths plus validated
-context. Its result must have exactly `markerSize` units. `offset` receives the
-same inputs and returns a finite location, which the runtime truncates and
-clamps into the transformed payload boundary.
+The profile fingerprint is derived from normalized semantic IR and carried in
+FISE and FISF headers. It detects accidental use of the wrong generated file.
+It is public, is not a secret, and is not an authentication tag.
 
-The marker is not an authentication tag. It can detect a wrong profile/context
-only when that mismatch changes the expected marker or its location. An
-attacker with the public profile can create a consistent replacement.
+## Security meaning
 
-The failure boundary is intentionally narrow:
-
-| Condition | Primary check | Marker contribution |
-| --- | --- | --- |
-| Wrong wire version or profile ID | Header fields | None |
-| Truncation or trailing data | Exact total length | None |
-| Wrong context or layout under the same ID | Recomputed marker/location | Partial; mappings and observed bytes can collide |
-| Same-length payload or salt mutation | Application integrity control | Not generally detected |
-| Deliberate rewrite by a party with the profile | Authentication/MAC/AEAD outside FISE | Not prevented |
-
-There is no profile-independent false-acceptance probability. A marker read at
-the wrong position is payload-dependent, not necessarily uniformly random.
-Marker width trades envelope overhead and representational capacity against the
-chance of an accidental match under a deployment-specific data model; it must
-not be converted into security bits.
-
-## Handwritten string profile
-
-```ts
-import { defineStringProfile, xorCipher } from "fise";
-
-export const catalogProfile = defineStringProfile({
-  id: "com.example.catalog.v3",
-  representation: "string",
-  transform: xorCipher,
-  context: {
-    metadata: { tenant: { type: "number", required: true } }
-  },
-  limits: { maxEnvelopeLength: 1_000_000 },
-  layout: {
-    markerSize: 2,
-    saltRange: { min: 16, max: 32 },
-    offset(input, ctx) {
-      const length = input.transformedLength || 1;
-      return (input.transformedLength * 5 + Number(ctx.metadata?.tenant)) % length;
-    },
-    createMarker(input, ctx) {
-      return ((input.saltLength + Number(ctx.metadata?.tenant)) % 1_296)
-        .toString(36)
-        .padStart(2, "0");
-    }
-  }
-});
-```
-
-## Handwritten binary profile
-
-```ts
-import { defineBinaryProfile, xorBinaryCipher } from "fise";
-
-export const assetProfile = defineBinaryProfile({
-  id: "com.example.assets.v2",
-  representation: "binary",
-  transform: xorBinaryCipher,
-  limits: { maxEnvelopeLength: 16 * 1024 * 1024 },
-  layout: {
-    markerSize: 2,
-    saltRange: { min: 24, max: 48 },
-    offset(input) {
-      return Math.floor(input.transformedLength / 2);
-    },
-    createMarker(input) {
-      return Uint8Array.from([
-        input.saltLength >>> 8,
-        input.saltLength & 0xff
-      ]);
-    }
-  }
-});
-```
-
-## Backend selection
-
-A backend is an implementation detail only when it produces exactly the same
-transform bytes. It must carry the same transform ID:
-
-```ts
-const backend = await createWasmXorBinaryCipher();
-const wasmProfile = withBinaryBackend(assetProfile, backend);
-```
-
-`withBinaryBackend` rejects a different ID with `TRANSFORM_MISMATCH`. Both
-`fise.xor.utf16.v1` and `fise.xor.u8.v1` are reserved for function identities
-registered by FISE, so an arbitrary same-ID callback cannot preserve a built-in
-semantic identity. The binary ID covers both the JavaScript and WASM backends.
-Binding also
-runs deterministic encrypt/decrypt, round-trip, ownership, and mutation checks
-using salt lengths from the profile's declared range.
-
-The asynchronous worker backend is passed to `fiseBinary*Async` or framed
-operation options instead of being installed into the synchronous profile:
-
-```ts
-const workers = await createParallelXorBinaryCipher({ workerCount: 4 });
-try {
-  const envelope = await fiseBinaryEncryptAsync(bytes, assetProfile, {
-    backend: workers
-  });
-} finally {
-  await workers.close();
-}
-```
-
-The async path snapshots the backend function pair, requires the same transform
-ID, and reserves the built-in ID for the FISE worker implementation. Worker
-chunk parity and ordinary-envelope interoperability are covered by conformance
-tests. The profile still owns the transform semantics and layout.
-
-Those finite checks catch implementation drift; they are not a mathematical
-proof about arbitrary trusted callback code. Application-owned transforms use
-their own ID and remain a trusted-code boundary. Validate them over their full
-domain and keep independent golden/property tests.
-
-## Identity and rotation
-
-The ID is public routing metadata, not a secret. Change it whenever any
-decode-relevant behavior changes, including transform semantics, layout,
-marker, salt range, context interpretation, or resource policy that must roll
-out atomically.
-
-`limits.maxEnvelopeLength` is enforced on both creation and restoration. A
-profile therefore cannot intentionally emit an envelope that its own default
-decode policy refuses.
-
-Handwritten IDs rely on developer discipline. Compiled manifests derive IDs
-from canonical content and emit a rotation artifact, so they are preferred for
-production governance. A handwritten profile does not become portable merely
-because it carries a `manifestDigest`-shaped value or reproduces a finite test
-vector.
-
-## Validation checklist
-
-- Exercise every salt length and meaningful context class.
-- Run `validateFiseProfileContract`; it exercises transform semantics as well as
-  marker and offset behavior within the declared salt range.
-- Include empty, Unicode, binary all-byte, and large payloads.
-- Verify wrong profiles, wrong context, marker changes, truncation, and limits.
-- Generate deterministic vectors for every implementation language/backend.
-- Roll producer and consumer atomically for every new profile ID.
-- Keep application payload schema validation after FISE decode.
-
-See [PROFILE_MANIFEST.md](./PROFILE_MANIFEST.md) and
-[CONFORMANCE.md](./CONFORMANCE.md).
+Generated profiles create execution diversity: different applications or
+generation runs contain different constants, operation order, fused code, and
+WASM bytes. This can reduce the reuse of one static signature or decoder. It
+does not prevent an attacker with client-runtime access from calling or hooking
+the generated reverse path. See [Security](./SECURITY.md).

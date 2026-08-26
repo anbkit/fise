@@ -31,12 +31,6 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
-      - name: Setup Python reference runtime
-        if: matrix.node-version == '22.x'
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Install exact dependencies
         run: npm ci
 
@@ -45,10 +39,6 @@ jobs:
 
       - name: Verify runnable examples
         run: npm run verify:examples
-
-      - name: Verify Python interoperability
-        if: matrix.node-version == '22.x'
-        run: npm run verify:interop
 
       - name: Verify package contract
         run: npm run verify:package
@@ -74,13 +64,11 @@ jobs:
         with:
           node-version: 22.x
 
-      - name: Setup Python reference runtime
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
       - name: Install exact dependencies
         run: npm ci
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Build exact release candidate and evidence
         run: npm run release:candidate -- --require-tag

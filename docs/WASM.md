@@ -1,102 +1,63 @@
-# FISE 1.1 WASM Integration
+# Generated WASM and parallel workers
 
-The optional WebAssembly backend implements exactly the built-in binary
-transform `fise.xor.u8.v1`. It does not change the wire profile.
+Every CLI-generated FISE 2.0 profile contains two byte-compatible execution
+forms derived from the same reversible IR:
 
-## Initialize and bind
+- fused specialized JavaScript forward/reverse loops;
+- a generated WebAssembly module with forward/reverse exports.
+
+WASM changes execution, not profile identity, envelope bytes, or the security
+boundary.
+
+## WASM
 
 ```ts
-import {
-  createWasmXorBinaryCipher,
-  defaultBinaryProfile,
-  fiseBinaryDecrypt,
-  fiseBinaryEncrypt,
-  isWasmXorBinaryCipherSupported,
-  withBinaryBackend
-} from "fise";
+const javascript = new Fise(profile);
+const wasm = await javascript.withWasm();
 
-if (!isWasmXorBinaryCipherSupported()) {
-  throw new Error("WebAssembly is required by this deployment");
-}
-
-const backend = await createWasmXorBinaryCipher({ maxMemoryPages: 1024 });
-const profile = withBinaryBackend(defaultBinaryProfile, backend);
-
-const envelope = fiseBinaryEncrypt(input, profile);
-const output = fiseBinaryDecrypt(envelope, profile);
+const envelope = wasm.encrypt(data, context);
+const restored = javascript.decrypt(envelope, context);
 ```
 
-Compile once during application or worker initialization and reuse the bound
-profile. Each factory call creates an isolated WASM instance and memory.
-`maxMemoryPages` is an integer from 1 through 65,536. One page is 64 KiB; the
-no-argument default is 1,024 pages, or 64 MiB per instance.
+Compilation is explicitly asynchronous. After `withWasm()` resolves, ordinary
+`encrypt`, `decrypt`, and framed operations remain synchronous. A new isolated
+WASM instance is bound to the returned `Fise`; the original instance continues
+using specialized JavaScript.
 
-## Implemented boundary
+WASM linear memory grows in 64 KiB pages, is capped at 512 MiB, and is cleared
+for the used input/context-segment region after each operation. Retained capacity may
+remain until the bound instance is discarded.
 
-The embedded 112-byte module exports one memory and
-`xor_in_place(dataPointer, dataLength, saltPointer, saltLength)`. The wrapper:
+## Parallel workers
 
-- caches module compilation per JavaScript realm;
-- grows memory in 64 KiB pages;
-- checks page-rounded `input.length + salt.length` against `maxMemoryPages`
-  before growth;
-- copies input and salt into linear memory;
-- copies result into an owned `Uint8Array`;
-- clears the used memory window on a best-effort basis; and
-- reports absence, compile/instantiate/export failure, and memory failure with
-  typed codes.
+```ts
+const parallel = await new Fise(profile).parallel({
+  workerCount: 4,
+  minimumParallelBytes: 256 * 1024
+});
 
-Headers, profile/context validation, salt generation, marker placement,
-assembly, and parsing remain TypeScript. The path is not zero-copy.
+try {
+  const envelope = await parallel.encrypt(bytes, context);
+  const restored = await parallel.decrypt(envelope, context);
+} finally {
+  await parallel.close();
+}
+```
 
-## Compatibility rule
+Workers compile the generated profile's WASM module once during startup. Large
+transforms are divided into contiguous chunks. Every task receives its absolute
+byte position, derived context segment, and mixed context lanes, so its output
+is byte-compatible with the single-loop JavaScript and WASM paths. Inputs below
+`minimumParallelBytes` use the local generated JavaScript kernel.
 
-Both JS and WASM implementations carry transform ID `fise.xor.u8.v1`. That
-built-in ID is reserved for function identities registered internally by FISE;
-an arbitrary same-ID callback is rejected. `withBinaryBackend` also runs
-deterministic cross-backend encrypt/decrypt, round-trip, mutation, and ownership
-checks using salt lengths from the profile range.
+Worker-backed ordinary and framed operations are asynchronous. The retained
+pool must be closed. Calls after close fail explicitly.
 
-An implementation that changes even one output byte needs a new transform ID
-and profile ID.
+## Availability
 
-## Failure and fallback
+`isWasmSupported()` and `isParallelSupported()` report API presence only.
+Compilation or worker startup may still fail because of Content Security
+Policy, resource policy, unavailable module workers, or platform limits.
 
-`isWasmXorBinaryCipherSupported()` checks API presence only. Compilation may
-still fail because of CSP, runtime policy, or resource limits. FISE does not
-silently fall back. Applications may select `xorBinaryCipher` explicitly and
-must monitor that choice if performance or policy depends on WASM.
-
-## Memory lifecycle and cap
-
-WebAssembly linear memory cannot shrink. An instance retains its highest grown
-page count until the instance is discarded, even after a later small transform.
-The wrapper clears the used window best-effort but does not release those pages.
-The configured cap makes that retained high-water finite; create a fresh backend
-instance if an application needs to discard a temporary high-water allocation.
-
-The cap applies to the WASM transform window, not total process memory. Input,
-salt, owned output, TypeScript envelope buffers, runtime overhead, and copies
-exist outside that window. Set profile/caller/transport limits independently and
-choose a lower `maxMemoryPages` when the 64-MiB default is inappropriate for the
-target device.
-
-## CSP
-
-The module bytes are embedded, so no `.wasm` fetch or MIME configuration is
-needed. CSP can still block WebAssembly compilation. Test the production policy
-in every supported browser; the feature probe cannot predict policy approval.
-
-## Security interpretation
-
-WASM is not an enclave. Browser tooling can observe module bytes, calls, memory,
-and plaintext boundaries. Memory clearing is hygiene rather than guaranteed
-cryptographic zeroization. The backend neither hides the profile nor upgrades
-the built-in XOR transform into cryptographic encryption.
-
-## Performance
-
-Compilation, copies, allocation, and memory growth can dominate small buffers.
-Measure cold initialization and full round trips on target devices. The local
-benchmark is `npm run benchmark:wasm`; interpretation guidance is in
-[PERFORMANCE.md](./PERFORMANCE.md).
+Neither backend hides plaintext from the hosting JavaScript environment or an
+attacker capable of runtime instrumentation.

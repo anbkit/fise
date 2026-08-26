@@ -65,7 +65,7 @@ export function generateReleaseEvidence({
 	}
 
 	const evidence = {
-		schema: "fise.release-evidence/1",
+		schema: "fise.release-evidence/2",
 		generatedAtUtc: new Date().toISOString(),
 		package: {
 			name: packageJson.name,
@@ -75,8 +75,9 @@ export function generateReleaseEvidence({
 			runtimeDependencyCount: Object.keys(packageJson.dependencies ?? {}).length
 		},
 		protocolContracts: {
-			ordinaryEnvelope: "FISE 1.1",
-			framedBinary: "FISF 1.0"
+			ordinaryEnvelope: "FISE 2.0",
+			framedBinary: "FISF 2.0",
+			profileArtifact: "generated Profile source"
 		},
 		source: {
 			gitCommit: commit,
@@ -109,7 +110,7 @@ export function generateReleaseEvidence({
 			"npm publication and registry integrity",
 			"deployed application CSP and hosting behavior",
 			"Firefox, WebKit, mobile, embedded, and constrained-device behavior",
-			"HTTP range acquisition, incremental input, streaming JSON, and lazy JSON",
+			"HTTP range acquisition and incremental container input",
 			"cryptographic confidentiality, authenticity, and integrity"
 		])
 	};

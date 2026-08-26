@@ -1,231 +1,228 @@
 # FISE — Fast Interoperable Structured Envelope
 
 [![npm version](https://img.shields.io/npm/v/fise.svg)](https://www.npmjs.com/package/fise)
-[![license](https://img.shields.io/github/license/anbkit/fise)](./LICENSE)
+[![license](https://img.shields.io/github/license/anbkit/fise.svg)](./LICENSE)
 [![Tests](https://github.com/anbkit/fise/actions/workflows/test.yml/badge.svg)](https://github.com/anbkit/fise/actions/workflows/test.yml)
 
-**One payload. One profile. One explicit wire contract.**
+**Generate a profile. Import it. Encrypt and decrypt.**
 
-## Why FISE
+FISE replaces directly consumable frontend payloads with a profile-specific
+application representation. Each generated profile contains a different
+deterministic, reversible byte pipeline. This raises the cost of reusable
+static inspection and generic decoding; it does not make client-visible data
+secret.
 
-TLS protects data in transit, but every payload delivered to and used by a
-frontend is ultimately observable in that client. Conventional JSON and byte
-payloads are also immediately intelligible and reusable by generic tooling.
-FISE calls the difference between receiving that payload and reproducing the
-application's restoration path the **client adaptation gap**.
+> `encrypt` and `decrypt` are operational API terms. FISE is keyless
+> representation and obfuscation, not cryptographic confidentiality,
+> authenticity, integrity, authorization, expiry, or replay prevention. Keep
+> TLS and use authenticated encryption when those properties are required.
 
-FISE 1.1 replaces a directly consumable representation with a versioned,
-profile-governed envelope. A consumer must reproduce the expected profile,
-external context, and restoration pipeline before it can use the payload. This
-can add inspection, integration, and maintenance work; the size of that effect
-is deployment-specific and must be measured.
+## Highlights
 
-FISE's **built-in model is keyless by design**: its default profiles create,
-exchange, store, and rotate no secret encryption key. Instead, one public
-executable **profile-as-code** contract owns the transform, layout, context,
-limits, representation, and compatibility identity. The profile and carried
-random salt are not secrets. Keyless is an operational property, not a
-cryptographic security claim.
+- **Generated profile as code:** every CLI run emits a different immutable,
+  profile-specific reversible pipeline.
+- **One API for every value:** strings, JSON-safe domain objects, and
+  `Uint8Array` use the same `encrypt` and `decrypt` methods.
+- **Optional positional context:** a scalar array can bind restoration to
+  application-known values without storing those values in the envelope.
+- **Independent frame encryption:** FISF encrypts binary data frame by frame
+  instead of forcing one monolithic transform.
+- **Partial restoration:** `decryptRange` transforms only frames intersecting
+  the requested byte range.
+- **Lazy frame decrypt:** `decryptProgressive` restores exactly one independent
+  frame per consumer pull.
+- **Shared JS, WASM, and parallel-worker wire:** execution backends interoperate
+  through the same generated profile and envelope format.
 
-> FISE keeps the API terms `encrypt` and `decrypt`, but its built-in XOR
-> profiles provide reversible encoding and obfuscation—not cryptographic
-> confidentiality, authenticity, or integrity. Keep TLS, access control, and
-> authenticated encryption wherever those properties are required.
+## Profile and context, in plain language
 
-## Install
+**A Profile is the generated recipe.** Running `fise generate` creates a source
+file containing one random reversible byte pipeline. Import that file on both
+the producer and consumer, then bind it once with `new Fise(profile)`. The same
+Profile handles objects, strings, and binary data. Generating another file means
+choosing another recipe, so old envelopes require the old committed file.
+
+**Context is temporary application state added to that recipe.** It is an
+optional ordered array containing values both sides already know, such as a
+session binding, user, tenant, connection epoch, resource version, or message
+sequence. Context changes the resulting representation. Decrypt must receive
+the same values in the same order.
+
+```text
+data     + Profile + context  -> envelope
+envelope + Profile + context  -> original data
+```
+
+FISE does not put the context or its key names in the envelope. Context is not a
+password, secret key, authorization check, or replacement for server security.
+Use it to make the representation depend on short-lived application state, not
+to grant access to data.
+
+## Start
+
+Install the runtime:
 
 ```sh
 npm install fise
 ```
 
-FISE is ESM-only. It requires Node 20+ or a browser with Web Crypto.
-
-## Use
-
-```ts
-import { defaultStringProfile, fiseDecrypt, fiseEncrypt } from "fise";
-
-const envelope = fiseEncrypt("hello", defaultStringProfile);
-const restored = fiseDecrypt(envelope, defaultStringProfile);
-```
-
-Producer and consumer must use the same profile and external context. FISE
-does not guess profiles, scan context ranges, or fall back to an older wire
-format.
-
-## Highlights
-
-- **Keyless built-in model:** default profiles require no secret-key lifecycle;
-  custom transforms retain responsibility for any stronger property.
-- **Profile as code:** one public, executable compatibility contract changes
-  transform, layout, context, limits, representation, and identity together.
-- **Exact, fail-closed wire:** magic, version, profile ID, salt length, and
-  transformed length are validated; legacy input, drift, truncation, trailing
-  data, malformed markers, and size violations produce typed errors.
-- **Reproducible lifecycle:** canonical manifests produce content-derived IDs,
-  deterministic vectors, rotation diffs, and atomic rollout artifacts.
-- **WASM parity and parallel workers:** optional WASM and dedicated Node/browser
-  module workers share the same binary transform identity and ordinary FISE
-  1.1 wire bytes.
-- **Selective and lazy frame restoration:** `FISF` range restore decrypts only
-  intersecting frames, while progressive restore defers each inner-envelope
-  decrypt until the consumer requests that frame.
-- **Application surfaces:** strings, binary data, UTF-8/JSON, strict HTTP
-  responses, and deterministic time-window context use one profile model.
-
-Markers are bounded consistency signals for context-dependent layout
-disagreement when it changes the expected value or position. They do not cover
-every payload byte, are not a MAC, and do not authenticate who created an
-envelope.
-
-This lazy behavior exists only at the independent-frame decrypt boundary.
-`FISF` APIs still consume a complete in-memory container and produce bytes;
-they do not claim HTTP range fetching, streaming input, or lazy JSON parsing.
-See [Framed Binary](./docs/FRAMED_BINARY.md).
-
-## When FISE fits
-
-Use FISE when one release owner controls both the producer and authorized
-client, changing the client representation has product value, and coordinated
-producer/consumer upgrades are acceptable.
-
-Do not use FISE as the boundary for secrets, authorization decisions,
-regulated confidentiality, or a public API that requires long-lived
-third-party wire compatibility.
-
-## FISF in one minute
-
-```text
-Profile decides HOW
-Frame index decides WHERE
-Consumer pull decides WHEN
-```
-
-```ts
-import {
-  defaultBinaryProfile,
-  fiseFramedBinaryDecryptProgressive,
-  fiseFramedBinaryDecryptRange,
-  fiseFramedBinaryEncrypt
-} from "fise";
-
-const bytes = Uint8Array.from(
-  { length: 2_000_000 },
-  (_, index) => index & 0xff
-);
-const container = await fiseFramedBinaryEncrypt(bytes, defaultBinaryProfile, {
-  frameSize: 256 * 1024
-});
-const slice = await fiseFramedBinaryDecryptRange(
-  container,
-  defaultBinaryProfile,
-  { start: 1_000_000, endExclusive: 1_250_000 }
-);
-
-let consumedFrames = 0;
-let consumedBytes = 0;
-for await (const frame of fiseFramedBinaryDecryptProgressive(
-  container,
-  defaultBinaryProfile
-)) {
-  consumedBytes += frame.length;
-  if (++consumedFrames === 2) break;
-}
-
-console.log(slice.length, consumedBytes);
-```
-
-The complete `container` is already available in memory. Range restoration
-transforms only intersecting frames; progressive restoration transforms one
-indexed frame per pull and stops after the consumer stops. It is not HTTP Range
-acquisition, incremental network input, streaming JSON, or lazy JSON.
-
-## Choose a surface
-
-| Need | API | Import |
-| --- | --- | --- |
-| JavaScript strings | `fiseEncrypt`, `fiseDecrypt` | `fise` |
-| Binary data | `fiseBinaryEncrypt`, `fiseBinaryDecrypt` | `fise` |
-| Worker binary transform | `createParallelXorBinaryCipher`, `fiseBinary*Async` | `fise` |
-| Indexed range/lazy frame bytes | `fiseFramedBinary*` | `fise` |
-| Deterministic time-window context | `resolveFiseTimeWindow` | `fise` |
-| UTF-8, JSON, HTTP `Response` | `fiseUtf8*`, `fiseJson*`, `createFise*Response` | `fise/http` |
-| Profiles and manifests | `define*Profile`, `compileFiseProfileManifest` | `fise`, `fise/profiles` |
-| Deterministic vectors | `create*ConformanceEnvelope` | `fise/conformance` |
-| Optional WASM backend | `createWasmXorBinaryCipher`, `withBinaryBackend` | `fise` |
-
-See the [quick start](./docs/QUICK_START.md) for time-window, binary, JSON,
-HTTP, and WASM examples.
-
-## Reproducible profiles
-
-Prefer declarative manifests when profile identity must be reproducible across
-builds and deployments:
+Generate a profile directly into your source tree:
 
 ```sh
-fise profile validate profile.json
-fise profile build profile.json
-fise profile vectors profile.json
-fise profile diff deployed.json next.json
+npx fise generate ./src/fise.profile.ts
 ```
 
-The compiler canonicalizes and deeply freezes the manifest, derives its profile
-ID from SHA-256 content identity, and emits artifacts for validation and atomic
-rotation. This is the portable profile path. Handwritten profiles remain a
-trusted application-local contract and are not implicitly cross-language.
-
-The repository includes an independent standard-library
-[Python binary reference](./reference/python/README.md) for compiled artifact
-identity and byte-level conformance.
-
-## Optional WASM
+Every invocation creates a new independent profile. The generated file is the
+complete source of truth and should be committed to Git. FISE stores no seed,
+manifest, name, revision, lock, rotation record, or regeneration history.
 
 ```ts
-import {
-  createWasmXorBinaryCipher,
-  defaultBinaryProfile,
-  withBinaryBackend
-} from "fise";
+import { Fise } from "fise";
+import profile from "./fise.profile.js";
 
-const backend = await createWasmXorBinaryCipher({ maxMemoryPages: 1024 });
-const profile = withBinaryBackend(defaultBinaryProfile, backend);
+const fise = new Fise(profile);
+const context = [
+  "session_7f4a",
+  "user_42",
+  "tenant_acme",
+  3,
+  "orders:v1",
+  18
+] as const;
+
+const envelope = fise.encrypt(
+  { id: 7, roles: ["editor"] },
+  context
+);
+
+const restored = fise.decrypt(envelope, context);
 ```
 
-The JavaScript and WASM implementations share the same binary transform
-semantics and profile identity. WASM changes execution, not the security
-boundary. Its linear memory is capped and retains its bounded high-water until
-the backend instance is discarded. See [WASM](./docs/WASM.md).
+The same profile handles strings, JSON-safe values, and bytes:
 
-## Version 1.1 boundary
+```ts
+fise.encrypt("text");
+fise.encrypt({ structured: true });
+fise.encrypt(Uint8Array.from([0, 1, 255]));
+```
 
-FISE 1.1 intentionally has no legacy API or decoder. Upgrade producers and
-consumers together, then regenerate or invalidate old stored, queued, and
-cached envelopes. See [Migrating to 1.1](./docs/MIGRATION_V1_1.md).
+FISE normalizes structured values to canonical JSON and UTF-8. Binary values
+remain bytes. A transformed internal metadata segment records whether decrypt
+must return a structured value or `Uint8Array`; there is no separate JSON,
+string, or binary profile.
 
-The npm package version can evolve independently from the wire version. Package
-1.2 keeps ordinary FISE `1.1` bytes and FISF `1.0` bytes unchanged.
+Context is optional and defaults to `[]`. When used, it must be a dense
+positional array containing only `null`, booleans, finite numbers, or strings.
+Order is semantic: encrypt and decrypt must receive the same values in the same
+positions. FISE snapshots the array; it stores neither the original context nor
+its derived segment in the envelope.
+
+## Generated profiles
+
+The CLI uses a cryptographically secure random source once per generation to
+select reversible operations and parameters. It then:
+
+```text
+typed reversible IR
+→ reject dead or identity stages
+→ derive the inverse
+→ fuse specialized JavaScript kernels
+→ compile the same kernel to WASM
+→ validate
+→ emit one immutable Profile instance
+```
+
+Randomness is used only while generating the file. Runtime behavior is fully
+deterministic for the same profile, payload, and context, so equal inputs under
+equal context produce equal envelopes. This equality leakage is intentional
+and is another reason FISE must not be described as cryptographic encryption.
+Profile code, fingerprint, context convention, and envelope layout are public
+assumptions rather than secrets.
+
+## Binary framing
+
+The same `Fise` instance exposes independent FISF 2.0 frames for binary data:
+
+```ts
+const container = fise.encryptFramed(bytes, context, {
+  frameSize: 256 * 1024
+});
+
+const selected = fise.decryptRange(
+  container,
+  { start: 1_000_000, endExclusive: 1_250_000 },
+  context
+);
+
+for await (const frame of fise.decryptProgressive(container, context)) {
+  consume(frame);
+  if (done()) break;
+}
+```
+
+Range restoration transforms only intersecting frames. Progressive restoration
+decrypts one frame per consumer pull. Both APIs receive a complete in-memory
+container; they do not fetch HTTP ranges, stream JSON, or provide lazy object
+properties.
+
+## WASM and workers
+
+Generated profiles carry matching specialized JavaScript and WASM semantics:
+
+```ts
+const wasm = await fise.withWasm();
+const envelope = wasm.encrypt(data, context);
+```
+
+For retained parallel workers:
+
+```ts
+const parallel = await fise.parallel({ workerCount: 4 });
+
+try {
+  const envelope = await parallel.encrypt(bytes, context);
+  const restored = await parallel.decrypt(envelope, context);
+} finally {
+  await parallel.close();
+}
+```
+
+Workers preserve absolute byte positions, so JavaScript, WASM, worker, full,
+range, and progressive operations share one profile fingerprint and wire
+contract.
+
+## Compatibility
+
+Package 2.0 implements only FISE 2.0 and FISF 2.0. It does not expose the 1.x
+function API, default profiles, builders, manifests, rotation helpers, string
+wire, or legacy decoder. Producer and consumer must deploy the same generated
+profile together. Replacing the committed profile intentionally invalidates
+envelopes created by the previous file unless that earlier code is restored
+from Git.
 
 ## Documentation
 
-- [Runnable examples](./examples/README.md)
 - [Quick start](./docs/QUICK_START.md)
-- [Reference specification](./docs/SPEC.md)
-- [Profiles](./docs/PROFILES.md) and [profile manifests](./docs/PROFILE_MANIFEST.md)
-- [HTTP](./docs/HTTP.md), [WASM](./docs/WASM.md), [framed binary](./docs/FRAMED_BINARY.md), and [conformance](./docs/CONFORMANCE.md)
+- [Generated profiles](./docs/PROFILES.md)
+- [FISE 2.0 specification](./docs/SPEC.md)
+- [Framed binary](./docs/FRAMED_BINARY.md)
+- [WASM and workers](./docs/WASM.md)
 - [Security boundary](./docs/SECURITY.md)
-- [Performance](./docs/PERFORMANCE.md) and [adaptation evaluation](./docs/ADAPTATION_EVALUATION.md)
-- [Release evidence](./docs/RELEASE_EVIDENCE.md)
 - [Engineering whitepaper](./docs/WHITEPAPER.md)
+- [Runnable examples](./examples/README.md)
 
 ## Development
 
 ```sh
-npm run release:check
-npm run verify:browser:serve
+npm test
+npm run verify:examples
+npm run verify:types
+npm run verify:package
+npm run verify:browser
 ```
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md).
-
-## License
-
-MIT © An Nguyen
+FISE is ESM-only and requires Node.js 20+ or a modern browser. Secure randomness
+is required by the Node-based profile generator, not by runtime operations.
+The browser gate uses the packed npm artifact in Chromium under a restrictive
+CSP and covers generated profiles, structured/binary data, WASM, workers, and
+FISF range/progressive restoration.

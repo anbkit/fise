@@ -1,23 +1,23 @@
-# FISE Runnable Examples
+# FISE 2.0 examples
 
-These dependency-free Node 20+ examples exercise the published FISE public API.
-They are executable documentation: every file asserts its result and exits
-non-zero when its contract is not satisfied.
+The committed `fise.profile.mjs` is one generated, immutable `Profile`
+instance. It is ordinary source code tracked by Git; the generator stores no
+seed, manifest, revision, or profile history.
 
-FISE keeps `encrypt` and `decrypt` as operational API verbs. The built-in XOR
-profiles provide reversible representation and obfuscation, not cryptographic
-confidentiality, authenticity, integrity, expiry, or replay prevention.
+Every runnable example uses a positional scalar context shaped from realistic,
+short-lived application state such as a session binding, user, tenant,
+connection, resource version, and response sequence. The same values and order
+are required for restore; context is established separately and is not stored
+in the envelope or treated as a secret key.
 
-| Example | Contract demonstrated |
+| Example | Demonstrates |
 | --- | --- |
-| `basic-string.mjs` | String round trip and typed fail-closed error |
-| `binary-payload.mjs` | Byte round trip and caller envelope bound |
-| `parallel-binary.mjs` | Dedicated workers with unchanged ordinary 1.1 wire |
-| `framed-binary.mjs` | Full, range, progressive, and early-stop byte restoration |
-| `json-http.mjs` | JSON `Response`, strict media contract, and application schema check |
-| `time-window.mjs` | One request anchor and coordinated public timestamp context |
-| `wasm-backend.mjs` | Explicit backend policy and JS/WASM wire interoperability |
-| `profile-rotation.mjs` | Canonical manifests, vectors, and no-fallback atomic rotation |
+| `basic.mjs` | One `encrypt/decrypt` API for strings, structured values, and bytes |
+| `api-session.mjs` | API transport bound to temporary client/server session state |
+| `binary-file.mjs` | File-like binary bytes with session, user, tenant, and asset context |
+| `framed.mjs` | Context-bound full, selective-range, and pull-driven binary restore |
+| `backends.mjs` | Context-preserving JavaScript, WASM, worker, and framed parity |
+| `failure-boundaries.mjs` | Wrong sequence/order, invalid context, and unsupported wire rejection |
 
 From a repository checkout:
 
@@ -29,8 +29,14 @@ To run one example after building the package:
 
 ```sh
 npm run build
-node examples/time-window.mjs
+node examples/basic.mjs
 ```
 
-The release gate also executes these files from the generated npm tarball, so
-they cannot silently depend on private source imports or checkout-only files.
+Generate a replacement profile at any time:
+
+```sh
+npx fise generate ./examples/fise.profile.mjs
+```
+
+Each invocation intentionally creates different executable profile code. Git
+is the only history mechanism.

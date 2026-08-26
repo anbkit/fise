@@ -1,57 +1,77 @@
 # Contributing to FISE
 
-Contributions, bug reports, profile ideas, conformance results, and measured
-performance evidence are welcome.
+FISE 2.0 is ESM-only, requires Node 20 or newer, and intentionally has no
+compatibility layer for earlier APIs or wire versions.
 
 ## Setup
 
 ```sh
 npm ci
-npm run build
 npm test
+npm run release:check
 ```
 
-FISE 1.1 requires Node 20 or newer and is ESM-only.
+## Contract changes
 
-## Before submitting
+Keep the public model small: one generated `Profile`, one profile-bound `Fise`
+instance, one `encrypt`/`decrypt` pair for structured values and bytes, and
+explicit framed methods for selective binary restoration.
+
+When changing the generator, profile ABI, FISE/FISF wire format, codec, parser,
+WASM backend, or worker backend:
+
+- update the relevant normative document;
+- add deterministic success and malformed-input tests;
+- prove JavaScript, generated WASM, and worker interoperability;
+- preserve absolute byte offsets across worker chunks;
+- preserve full, range, progressive, and abort behavior for FISF;
+- keep parsers bounded and fail closed;
+- do not add a legacy decoder or runtime profile builder.
+
+## Documentation ownership
+
+Keep the explanation layered:
+
+- `README.md` owns the small public mental model and first successful example;
+- `docs/QUICK_START.md` owns task-oriented usage and realistic context setup;
+- `docs/PROFILES.md` owns the generator and generated-module lifecycle;
+- `docs/SPEC.md` owns normative wire and callback behavior;
+- `docs/SECURITY.md` owns claims, non-claims, and attacker capabilities.
+
+Describe a Profile first as a generated transformation recipe. Describe context
+first as an optional ordered array of temporary application values known at both
+ends. Only then introduce the callback ABI, Base64URL segment, lanes, offsets,
+and markers. Never describe context as a secret key or put authorization logic
+inside profile callbacks.
+
+Generated profile files are source artifacts. Produce them with
+`fise generate <output-file>`, commit them to Git, and never hand-edit their
+opaque pipeline. A new generator invocation intentionally creates a different
+profile and overwrites only the requested output file.
+
+Runnable examples are packed public-API checks. They must import published
+entry points, assert their result, and be listed in `examples/run-all.mjs`.
+
+Install the pinned Chromium once, then run the automated packed-browser gate:
 
 ```sh
-npm run release:check
+npx playwright install chromium
+npm run verify:browser
+```
+
+To keep the same packed smoke page open for manual inspection, run:
+
+```sh
 npm run verify:browser:serve
 ```
 
-The browser command prints a loopback URL backed by an installed tarball. Open
-it in each claimed browser and require a PASS result with no console errors.
+The automated gate launches the printed loopback URL and requires `PASS` with
+no console warnings, page errors, or failed requests. Both commands test the
+installed tarball under a restrictive CSP; a Node-only result is not browser
+evidence.
 
-Runnable examples are packed public-API contracts. Keep them dependency-free,
-import only from published `fise` entry points, assert their outcomes, and add
-new entries to `examples/run-all.mjs` so source and tarball gates execute them.
-
-When changing a profile, manifest, transform, header, or parser:
-
-- update the normative specification and migration notes;
-- add deterministic string/binary or manifest vectors;
-- test malformed input and resource bounds;
-- verify all compatible JavaScript/WASM backends;
-- verify async worker parity, cancellation, lifecycle, and packed module-worker
-  loading when changing binary transform execution;
-- preserve `FISF` header/index vectors, selected-frame semantics, bounds, and
-  progressive backpressure when changing framed behavior;
-- use a new profile or wire identity when decode behavior changes; and
-- do not add legacy fallback to the 1.1 decoder.
-
-When making browser or performance claims, record the exact runtime, platform,
-revision, method, and limitations. Source inspection or a Node test is not
-browser evidence, and a local microbenchmark is not a universal result.
-
-## Security language
-
-The built-in XOR profiles are reversible encoding/obfuscation. Do not describe
-them as cryptographic confidentiality, authenticated integrity, DRM, or a
-trusted WASM boundary. Keep operational `encrypt`/`decrypt` terminology tied to
-the explicit boundary in [docs/SECURITY.md](./docs/SECURITY.md).
-
-## Pull requests
-
-Keep changes focused, explain compatibility impact, list verification commands,
-and call out any proposed behavior that is not yet implemented or verified.
+Performance claims must identify the command, runtime, payload, iteration
+policy, measurement boundary, and limitations. Security language must remain
+precise: FISE changes an exposed representation and raises interpretation
+effort; it is not cryptographic confidentiality, authenticity, or integrity.
+See [docs/SECURITY.md](docs/SECURITY.md).

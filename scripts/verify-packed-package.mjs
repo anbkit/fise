@@ -63,10 +63,10 @@ try {
 		[metadata] = JSON.parse(packOutput);
 		tarballPath = join(temporaryRoot, metadata.filename);
 	}
+
 	assert.equal(metadata.name, "fise");
 	assert.equal(metadata.version, packageJson.version);
 	if (metadata.entryCount !== null) assert.ok(metadata.entryCount > 0);
-
 	assert.ok(existsSync(tarballPath), "npm pack did not produce the expected tarball");
 	const sha256 = createHash("sha256").update(readFileSync(tarballPath)).digest("hex");
 
@@ -82,111 +82,142 @@ try {
 		{ cwd: consumerRoot }
 	);
 
-	const smokePath = join(consumerRoot, "smoke.mjs");
-	writeFileSync(smokePath, `
-import {
-  createWasmXorBinaryCipher,
-  createParallelXorBinaryCipher,
-  defaultBinaryProfile,
-  fiseBinaryDecrypt,
-  fiseBinaryEncrypt,
-  fiseBinaryDecryptAsync,
-  fiseBinaryEncryptAsync,
-  fiseFramedBinaryDecrypt,
-  fiseFramedBinaryDecryptRange,
-  fiseFramedBinaryEncrypt,
-  resolveFiseTimeWindow,
-  withBinaryBackend
-} from "fise";
-import * as conformance from "fise/conformance";
-import * as profiles from "fise/profiles";
-import * as http from "fise/http";
-
-const input = Uint8Array.from([0, 1, 2, 127, 128, 255]);
-const timeWindow = resolveFiseTimeWindow(60_000, { durationMs: 60_000 });
-const equal = (left, right) =>
-  left.length === right.length && left.every((value, index) => value === right[index]);
-
-const jsEnvelope = fiseBinaryEncrypt(input, defaultBinaryProfile);
-const jsOutput = fiseBinaryDecrypt(jsEnvelope, defaultBinaryProfile);
-const wasmProfile = withBinaryBackend(defaultBinaryProfile, await createWasmXorBinaryCipher());
-const wasmEnvelope = fiseBinaryEncrypt(input, wasmProfile);
-const wasmOutput = fiseBinaryDecrypt(wasmEnvelope, wasmProfile);
-const parallel = await createParallelXorBinaryCipher({ workerCount: 2, minimumParallelBytes: 0 });
-let parallelOutput;
-let framedOutput;
-let rangeOutput;
-try {
-  const parallelEnvelope = await fiseBinaryEncryptAsync(input, defaultBinaryProfile, { backend: parallel });
-  parallelOutput = await fiseBinaryDecryptAsync(parallelEnvelope, defaultBinaryProfile, { backend: parallel });
-  const framed = await fiseFramedBinaryEncrypt(input, defaultBinaryProfile, { frameSize: 2, backend: parallel });
-  framedOutput = await fiseFramedBinaryDecrypt(framed, defaultBinaryProfile, { backend: parallel });
-  rangeOutput = await fiseFramedBinaryDecryptRange(framed, defaultBinaryProfile, { start: 1, endExclusive: 5 });
-} finally {
-  await parallel.close();
-}
-
-if (
-  timeWindow.timestamp !== 1 ||
-  timeWindow.startMs !== 60_000 ||
-  timeWindow.endExclusiveMs !== 120_000 ||
-  !equal(input, jsOutput) ||
-  !equal(input, wasmOutput)
-  || !equal(input, parallelOutput)
-  || !equal(input, framedOutput)
-  || !equal(input.slice(1, 5), rangeOutput)
-) {
-  throw new Error("Packed root API or JS/WASM binary round trip failed");
-}
-if (
-  typeof conformance.createBinaryConformanceEnvelope !== "function" ||
-  typeof profiles.compileFiseProfileManifest !== "function" ||
-  typeof http.createFiseResponse !== "function"
-) {
-  throw new Error("Packed subpath export check failed");
-}
-`);
-	run(process.execPath, [smokePath], { cwd: consumerRoot });
-
 	const installedPackageRoot = join(consumerRoot, "node_modules/fise");
 	const installedPackageJson = JSON.parse(
 		readFileSync(join(installedPackageRoot, "package.json"), "utf8")
 	);
 	assert.equal(installedPackageJson.name, packageJson.name);
 	assert.equal(installedPackageJson.version, packageJson.version);
+
+	const generatedProfilePath = join(consumerRoot, "profile.generated.mjs");
+	run(
+		process.execPath,
+		[join(installedPackageRoot, "dist/cli.js"), "generate", generatedProfilePath],
+		{ cwd: consumerRoot }
+	);
+
+	const smokePath = join(consumerRoot, "smoke.mjs");
+	writeFileSync(smokePath, `
+import assert from "node:assert/strict";
+import {
+  Fise,
+  Profile,
+  FISE_WIRE_VERSION,
+  FISF_WIRE_VERSION,
+  isParallelSupported,
+  isWasmSupported
+} from "fise";
+import profile from "./profile.generated.mjs";
+
+assert.ok(profile instanceof Profile);
+assert.ok(Object.isFrozen(profile));
+assert.deepEqual(FISE_WIRE_VERSION, { major: 2, minor: 0 });
+assert.deepEqual(FISF_WIRE_VERSION, { major: 2, minor: 0 });
+
+const javascript = new Fise(profile);
+const context = [7, "packed-smoke"];
+const structured = { message: "packed", values: [1, true, null] };
+const bytes = Uint8Array.from({ length: 70_003 }, (_, index) => (index * 31 + 9) & 0xff);
+assert.deepEqual(javascript.decrypt(javascript.encrypt(structured, context), context), structured);
+assert.deepEqual(javascript.decrypt(javascript.encrypt(bytes, context), context), bytes);
+
+if (isWasmSupported()) {
+  const wasm = await javascript.withWasm();
+  assert.deepEqual(wasm.decrypt(javascript.encrypt(bytes, context), context), bytes);
+  assert.deepEqual(javascript.decrypt(wasm.encrypt(bytes, context), context), bytes);
+}
+
+const framed = javascript.encryptFramed(bytes, context, { frameSize: 16_384 });
+assert.deepEqual(javascript.decryptFramed(framed, context), bytes);
+assert.deepEqual(
+  javascript.decryptRange(framed, { start: 15_000, endExclusive: 52_000 }, context),
+  bytes.slice(15_000, 52_000)
+);
+const progressive = [];
+for await (const frame of javascript.decryptProgressive(framed, context)) progressive.push(...frame);
+assert.deepEqual(Uint8Array.from(progressive), bytes);
+
+if (isParallelSupported()) {
+  const parallel = await javascript.parallel({ workerCount: 2, minimumParallelBytes: 0 });
+  try {
+    assert.deepEqual(await parallel.decrypt(javascript.encrypt(bytes, context), context), bytes);
+    assert.deepEqual(javascript.decrypt(await parallel.encrypt(bytes, context), context), bytes);
+    const workerFramed = await parallel.encryptFramed(bytes, context, { frameSize: 16_384 });
+    assert.deepEqual(await parallel.decryptFramed(workerFramed, context), bytes);
+  } finally {
+    await parallel.close();
+  }
+}
+
+for (const specifier of [
+  "fise/profiles",
+  "fise/http",
+  "fise/conformance",
+  "fise/generator",
+  "fise/v2/generator"
+]) {
+  let rejected = false;
+  try {
+    await import(specifier);
+  } catch (error) {
+    rejected = error?.code === "ERR_PACKAGE_PATH_NOT_EXPORTED";
+  }
+  assert.equal(rejected, true, "unsupported subpath remained importable: " + specifier);
+}
+`);
+	run(process.execPath, [smokePath], { cwd: consumerRoot });
+
 	for (const relativePath of [
+		"dist/index.js",
+		"dist/index.d.ts",
+		"dist/profileRuntime.js",
+		"dist/profileRuntime.d.ts",
+		"dist/cli.js",
+		"docs/SPEC.md",
+		"docs/PROFILES.md",
+		"docs/SECURITY.md",
+		"docs/WHITEPAPER.md",
 		"examples/README.md",
-		"examples/basic-string.mjs",
-		"examples/binary-payload.mjs",
-		"examples/framed-binary.mjs",
-		"examples/json-http.mjs",
-		"examples/profile-rotation.mjs",
-		"examples/parallel-binary.mjs",
-		"examples/run-all.mjs",
-		"examples/time-window.mjs",
-		"examples/wasm-backend.mjs",
-		"reference/python/fise_v11_binary.py",
-		"reference/python/test_fise_v11_binary.py",
-		"reference/python/fixtures/compiled-binary-artifact.json",
-		"reference/python/fixtures/compiled-binary-vector.json"
+		"examples/fise.profile.mjs",
+		"examples/basic.mjs",
+		"examples/api-session.mjs",
+		"examples/binary-file.mjs",
+		"examples/framed.mjs",
+		"examples/backends.mjs",
+		"examples/failure-boundaries.mjs",
+		"examples/run-all.mjs"
 	]) {
 		assert.ok(
 			existsSync(join(installedPackageRoot, relativePath)),
 			`Packed artifact is missing: ${relativePath}`
 		);
 	}
+	for (const removedPath of [
+		"dist/fiseEncrypt.js",
+		"dist/fiseBinaryEncrypt.js",
+		"dist/profileBuilder.js",
+		"dist/profileManifest.js",
+		"reference/python"
+	]) {
+		assert.equal(
+			existsSync(join(installedPackageRoot, removedPath)),
+			false,
+			`Legacy artifact was packed: ${removedPath}`
+		);
+	}
+
 	const examplesOutput = run(
 		process.execPath,
 		[join(installedPackageRoot, "examples/run-all.mjs")],
 		{ cwd: consumerRoot }
 	);
-	assert.match(examplesOutput, /Verified 8 runnable FISE examples\./);
+	assert.match(examplesOutput, /Verified 6 runnable FISE examples\./);
 
 	console.log(
 		`Packed FISE ${metadata.version}: ` +
 		`${metadata.entryCount === null ? "supplied exact artifact" : `${metadata.entryCount} files`}, ` +
-		`${metadata.size} bytes, SHA-256 ${sha256}; empty-consumer ESM, subpath, ` +
-		`JS, WASM, parallel workers, framed range/progressive artifacts, runnable examples, and reference checks passed.`
+		`${metadata.size} bytes, SHA-256 ${sha256}; generated profile, unified API, ` +
+		`JS/WASM/workers, FISF full/range/progressive, examples, and legacy removal passed.`
 	);
 } finally {
 	rmSync(temporaryRoot, { recursive: true, force: true });

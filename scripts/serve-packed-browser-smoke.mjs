@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import {
 	existsSync,
@@ -20,17 +21,6 @@ const temporaryRoot = mkdtempSync(join(tmpdir(), "fise-packed-browser-"));
 const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
 const packageJson = JSON.parse(readFileSync(join(repositoryRoot, "package.json"), "utf8"));
 const suppliedTarball = parseSuppliedTarball(process.argv.slice(2));
-const csp = [
-	"default-src 'none'",
-	"script-src 'self' 'wasm-unsafe-eval'",
-	"connect-src 'self'",
-	"worker-src 'self'",
-	"img-src data:",
-	"style-src 'none'",
-	"base-uri 'none'",
-	"object-src 'none'",
-	"frame-ancestors 'none'"
-].join("; ");
 
 function run(command, args, cwd = repositoryRoot) {
 	const result = spawnSync(command, args, {
@@ -82,7 +72,14 @@ run(
 	consumerRoot
 );
 
-const packageDistRoot = realpathSync(join(consumerRoot, "node_modules/fise/dist"));
+const installedPackageRoot = join(consumerRoot, "node_modules/fise");
+const packageDistRoot = realpathSync(join(installedPackageRoot, "dist"));
+const browserProfilePath = join(consumerRoot, "browser.profile.mjs");
+run(
+	process.execPath,
+	[join(installedPackageRoot, "dist/cli.js"), "generate", browserProfilePath],
+	consumerRoot
+);
 const installedPackageJson = JSON.parse(
 	readFileSync(join(consumerRoot, "node_modules/fise/package.json"), "utf8")
 );
@@ -90,6 +87,25 @@ assert.equal(installedPackageJson.name, packageJson.name);
 assert.equal(installedPackageJson.version, packageJson.version);
 const smokeHtmlPath = join(repositoryRoot, "tests/browser/wasm-smoke.html");
 const smokeModulePath = join(repositoryRoot, "tests/browser/wasm-smoke.mjs");
+const smokeHtml = readFileSync(smokeHtmlPath);
+const importMapMatch = smokeHtml.toString("utf8").match(
+	/<script type="importmap">([\s\S]*?)<\/script>/
+);
+assert.ok(importMapMatch, "Browser smoke HTML must contain one inline import map");
+const importMapHash = createHash("sha256")
+	.update(importMapMatch[1])
+	.digest("base64");
+const csp = [
+	"default-src 'none'",
+	`script-src 'self' 'wasm-unsafe-eval' 'sha256-${importMapHash}'`,
+	"connect-src 'self'",
+	"worker-src 'self'",
+	"img-src data:",
+	"style-src 'none'",
+	"base-uri 'none'",
+	"object-src 'none'",
+	"frame-ancestors 'none'"
+].join("; ");
 let cleaned = false;
 
 function cleanup() {
@@ -124,11 +140,15 @@ function resolveDistFile(urlPath) {
 const server = createServer((request, response) => {
 	const url = new URL(request.url ?? "/", "http://127.0.0.1");
 	if (url.pathname === "/" || url.pathname === "/index.html") {
-		send(response, 200, "text/html; charset=utf-8", readFileSync(smokeHtmlPath));
+		send(response, 200, "text/html; charset=utf-8", smokeHtml);
 		return;
 	}
 	if (url.pathname === "/smoke.mjs") {
 		send(response, 200, "text/javascript; charset=utf-8", readFileSync(smokeModulePath));
+		return;
+	}
+	if (url.pathname === "/profile.mjs") {
+		send(response, 200, "text/javascript; charset=utf-8", readFileSync(browserProfilePath));
 		return;
 	}
 	if (url.pathname.startsWith("/dist/")) {

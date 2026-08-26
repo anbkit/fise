@@ -75,7 +75,6 @@ let failure;
 try {
 	runGate("node-tests", npm, ["test"]);
 	runGate("runnable-examples", npm, ["run", "verify:examples"]);
-	runGate("python-interoperability", npm, ["run", "verify:interop"]);
 	runGate("package-contract", npm, ["run", "verify:package"]);
 	runGate("benchmark-types", npm, ["run", "verify:benchmarks"]);
 
@@ -165,6 +164,11 @@ try {
 		"--tarball",
 		tarballPath
 	]);
+	runGate("exact-packed-browser", process.execPath, [
+		resolve(repositoryRoot, "scripts/verify-packed-browser-smoke.mjs"),
+		"--tarball",
+		tarballPath
+	]);
 } catch (error) {
 	failure = error;
 }
@@ -173,7 +177,6 @@ const unverifiedBoundaries = [
 	...(values["skip-benchmarks"]
 		? ["framed and worker benchmarks were explicitly skipped"]
 		: []),
-	"packed-browser smoke requires a separately controlled real browser",
 	"GitHub repository metadata is external to the release artifact"
 ];
 const generated = generateReleaseEvidence({
@@ -239,8 +242,8 @@ function parseCounts(output) {
 	assignMatch(counts, "passed", output, /# pass (\d+)/);
 	assignMatch(counts, "failed", output, /# fail (\d+)/);
 	assignMatch(counts, "runnableExamples", output, /Verified (\d+) runnable FISE examples/);
-	assignMatch(counts, "pythonTests", output, /Ran (\d+) tests?/);
 	assignMatch(counts, "markdownDocuments", output, /Verified local Markdown links in (\d+) FISE documents/);
+	assignMatch(counts, "browserFISFFrames", output, /Packed Chromium PASS:.*? (\d+) FISF frames/);
 	return Object.keys(counts).length === 0 ? null : counts;
 }
 

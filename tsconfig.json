@@ -18,7 +18,11 @@
     ]
   },
   "include": [
-    "src/**/*"
+    "src/index.ts",
+    "src/profileRuntime.ts",
+    "src/cli.ts",
+    "src/errors.ts",
+    "src/v2/**/*"
   ],
   "exclude": [
     "benchmarks/**/*"
