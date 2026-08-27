@@ -78,6 +78,11 @@ export async function verifyProfileFile(path: string): Promise<ProfileVerificati
 }
 
 export async function verifyProfileSource(source: string): Promise<ProfileVerification> {
+	return verifyProfile(await loadGeneratedProfileSource(source));
+}
+
+/** @internal Loads only the canonical generated JavaScript source shape. */
+export async function loadGeneratedProfileSource(source: string): Promise<Profile> {
 	if (typeof source !== "string" || Buffer.byteLength(source, "utf8") > MAX_PROFILE_SOURCE_BYTES) {
 		throw new FiseError("INVALID_PROFILE", "FISE CLI: generated profile source is invalid or too large.");
 	}
@@ -109,7 +114,7 @@ export async function verifyProfileSource(source: string): Promise<ProfileVerifi
 			"FISE CLI: generated module must export exactly one default Profile instance."
 		);
 	}
-	return verifyProfile(module.default);
+	return module.default;
 }
 
 async function verifyProfile(profile: Profile): Promise<ProfileVerification> {

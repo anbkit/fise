@@ -6,6 +6,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	readdirSync,
 	rmSync,
 	statSync,
 	writeFileSync
@@ -28,6 +29,7 @@ function run(command, args, options = {}) {
 		encoding: "utf8",
 		env: {
 			...process.env,
+			PYTHONDONTWRITEBYTECODE: "1",
 			npm_config_cache: join(temporaryRoot, "npm-cache"),
 			npm_config_dry_run: "false",
 			...options.env
@@ -85,6 +87,7 @@ try {
 	);
 
 	const installedPackageRoot = join(consumerRoot, "node_modules/fise");
+	assertNoPythonBytecode(installedPackageRoot);
 	const installedPackageJson = JSON.parse(
 		readFileSync(join(installedPackageRoot, "package.json"), "utf8")
 	);
@@ -94,27 +97,49 @@ try {
 		cwd: consumerRoot
 	});
 	assert.match(binHelpOutput, /FISE 2\.0 CLI/);
-	assert.match(binHelpOutput, /fise generate <output-file> \[--override\]/);
+	assert.match(
+		binHelpOutput,
+		/fise generate <output-file> \[--backend python\] \[--override\]/
+	);
 
 	const generatedProfilePath = join(consumerRoot, "profile.generated.mjs");
 	const generationOutput = run(
 		process.execPath,
-		[join(installedPackageRoot, "dist/cli.js"), "generate", generatedProfilePath],
+		[
+			join(installedPackageRoot, "dist/cli.js"),
+			"generate",
+			generatedProfilePath,
+			"--backend",
+			"python"
+		],
 		{ cwd: consumerRoot }
 	);
+	const generatedPythonProfilePath = join(consumerRoot, "profile_generated.py");
 	const generatedProfileSource = readFileSync(generatedProfilePath, "utf8");
+	const generatedPythonProfileSource = readFileSync(generatedPythonProfilePath, "utf8");
 	assert.match(generatedProfileSource, /^import \{ Profile \} from "fise\/profile-runtime";/);
 	assert.doesNotMatch(generatedProfileSource, /\/\/|\/\*/);
+	assert.match(generatedPythonProfileSource, /^from fise\.profile_runtime import Profile/);
+	assert.doesNotMatch(generatedPythonProfileSource, /#/);
 	assert.match(generationOutput, /Verified .*text.*binary.*JavaScript.*WASM.*workers/);
-	assert.match(generationOutput, /Monorepo: import it from one shared package/);
-	assert.match(generationOutput, /Separate repos: distribute this exact file/);
+	assert.match(generationOutput, /JavaScript ↔ Python exact wire/);
+	assert.match(generationOutput, /Commit both generated files as one compatibility pair/);
+	assert.match(generationOutput, /Separate repos: distribute these exact paired files/);
 	assert.match(generationOutput, /Context: use the same positional contract/);
 	const verificationOutput = run(
 		process.execPath,
-		[join(installedPackageRoot, "dist/cli.js"), "verify", generatedProfilePath],
+		[
+			join(installedPackageRoot, "dist/cli.js"),
+			"verify",
+			generatedProfilePath,
+			generatedPythonProfilePath
+		],
 		{ cwd: consumerRoot }
 	);
-	assert.match(verificationOutput, /PASS .*text.*binary.*JavaScript.*WASM.*workers/);
+	assert.match(
+		verificationOutput,
+		/PASS .*text.*binary.*JavaScript.*WASM.*workers.*JavaScript ↔ Python exact wire/
+	);
 	assert.equal(
 		run(process.execPath, [join(installedPackageRoot, "dist/cli.js"), "--version"], {
 			cwd: consumerRoot
@@ -294,13 +319,26 @@ async function main() {
 		"dist/profileRuntime.d.ts",
 		"dist/cli.js",
 		"dist/v2/verifier.js",
+		"dist/v2/pythonVerifier.js",
 		"dist/v2/base64Url.js",
 		"dist/v2/binary.js",
 		"dist/v2/coverage.js",
 		"dist/v2/lz4.js",
 		"conformance/README.md",
 		"conformance/v2/profile.generated.mjs",
+		"conformance/v2/profile_generated.py",
 		"conformance/v2/vectors.json",
+		"python/pyproject.toml",
+		"python/README.md",
+		"python/LICENSE",
+		"python/src/fise/__init__.py",
+		"python/src/fise/core.py",
+		"python/src/fise/errors.py",
+		"python/src/fise/profile_runtime.py",
+		"python/src/fise/_codec.py",
+		"python/src/fise/_lz4.py",
+		"python/src/fise/_verify.py",
+		"python/src/fise/py.typed",
 		"docs/AGENT_GUIDE.md",
 		"docs/BINARY_DATA.md",
 		"docs/CLI.md",
@@ -311,6 +349,7 @@ async function main() {
 		"docs/WHITEPAPER.md",
 		"examples/README.md",
 		"examples/fise.profile.mjs",
+		"examples/fise_profile.py",
 		"examples/basic.mjs",
 		"examples/api-session.mjs",
 		"examples/agent-stream.mjs",
@@ -318,6 +357,8 @@ async function main() {
 		"examples/binary-restoration.mjs",
 		"examples/backends.mjs",
 		"examples/failure-boundaries.mjs",
+		"examples/python-agent-backend.py",
+		"examples/python-agent-interop.mjs",
 		"examples/raw-fallback.mjs",
 		"examples/ttl.mjs",
 		"examples/web-application.mjs",
@@ -349,18 +390,34 @@ async function main() {
 		[join(installedPackageRoot, "examples/run-all.mjs")],
 		{ cwd: consumerRoot }
 	);
-	assert.match(examplesOutput, /Verified 10 runnable FISE examples\./);
+	assert.match(examplesOutput, /Verified 11 runnable FISE examples\./);
+	assertNoPythonBytecode(installedPackageRoot);
 
 	console.log(
 		`Packed FISE ${metadata.version}: ` +
 		`${metadata.entryCount === null ? "supplied exact artifact" : `${metadata.entryCount} files`}, ` +
 		`${metadata.size} bytes, SHA-256 ${sha256}; generated profile, unified API, ` +
 		`Base64URL/binary transport, adaptive structured compression, full/edge coverage, raw fallback, ` +
-		`JS/WASM/workers, direct range/progressive, ` +
+		`JS/WASM/workers/Python, exact cross-language wire, direct range/progressive, ` +
 		`examples, and legacy removal passed.`
 	);
 } finally {
 	rmSync(temporaryRoot, { recursive: true, force: true });
+}
+
+function assertNoPythonBytecode(root) {
+	const pending = [root];
+	while (pending.length > 0) {
+		const directory = pending.pop();
+		for (const entry of readdirSync(directory, { withFileTypes: true })) {
+			const path = join(directory, entry.name);
+			assert.ok(
+				entry.name !== "__pycache__" && !/\.py[co]$/.test(entry.name),
+				`Packed artifact contains generated Python bytecode: ${path}`
+			);
+			if (entry.isDirectory()) pending.push(path);
+		}
+	}
 }
 
 function parseSuppliedTarball(arguments_) {

@@ -24,14 +24,16 @@ security property. Envelope length can reveal payload size and compressibility.
 
 The following are public and may be obtained by a client-side attacker:
 
-- generated Profile source and fingerprint;
+- generated JavaScript or Python Profile source and fingerprint;
 - envelope, coverage, context derivation, and positional context convention;
 - optional absolute envelope expiry;
 - runtime package and wire specification;
 - marker and length behavior; and
-- JavaScript, WASM, and worker execution paths.
+- JavaScript, Python, WASM, and worker execution paths.
 
-The Profile is executable code shipped to the consumer, not a secret key.
+The Profile is executable code shipped to the consumer or backend, not a secret
+key. Emitting JavaScript and Python artifacts from one IR provides wire
+compatibility, not an additional protection property.
 Context is application-supplied external data, not a FISE-managed secret. A
 derived context segment is omitted from the envelope, but an attacker can test
 context candidates using the public Profile and 32-bit marker.

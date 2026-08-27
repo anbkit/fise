@@ -78,8 +78,8 @@ export function generateReleaseEvidence({
 			ordinaryEnvelope: "FISE 2.0",
 			structuredTransport: "canonical Base64URL with deterministic adaptive LZ4",
 			selectiveBinary: "ordinary-envelope full/edge coverage with range and progressive restoration",
-			profileArtifact: "generated Profile source",
-			conformanceCorpus: "packaged accepted and malformed canonical, LZ4, payload, context, TTL, transport, and wire vectors"
+			profileArtifact: "generated JavaScript source or same-IR JavaScript/Python pair",
+			conformanceCorpus: "packaged JavaScript/Python accepted and malformed canonical, LZ4, payload, context, TTL, transport, and wire vectors"
 		},
 		source: {
 			gitCommit: commit,
@@ -92,6 +92,7 @@ export function generateReleaseEvidence({
 		environment: {
 			node: process.version,
 			npm: runText(npmCommand(), ["--version"]),
+			python: pythonVersion(),
 			os: type(),
 			osRelease: release(),
 			platform: platform(),
@@ -110,6 +111,7 @@ export function generateReleaseEvidence({
 		unverifiedBoundaries: uniqueStrings([
 			...unverifiedBoundaries,
 			"npm publication and registry integrity",
+			"PyPI publication and registry integrity",
 			"deployed application CSP and hosting behavior",
 			"Webpack, Next.js, and framework-specific production bundling",
 			"Firefox, WebKit, mobile, embedded, and constrained-device behavior",
@@ -175,6 +177,23 @@ function readJson(path) {
 
 function npmCommand() {
 	return process.platform === "win32" ? "npm.cmd" : "npm";
+}
+
+function pythonVersion() {
+	for (const candidate of [
+		{ executable: "python3", prefix: [] },
+		{ executable: "python", prefix: [] },
+		{ executable: "py", prefix: ["-3"] }
+	]) {
+		const result = spawnSync(candidate.executable, [...candidate.prefix, "--version"], {
+			cwd: repositoryRoot,
+			encoding: "utf8"
+		});
+		if (!result.error && result.status === 0) {
+			return `${result.stdout}${result.stderr}`.trim();
+		}
+	}
+	return null;
 }
 
 function uniqueStrings(values) {

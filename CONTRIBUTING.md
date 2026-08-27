@@ -51,12 +51,12 @@ negative zero. Any other-language runtime must first pass the packaged
 conformance corpus in both directions with JavaScript. Do not regenerate the
 corpus Profile or vectors during ordinary test setup.
 
-The first additional-language implementation must extend one CLI generation
-operation to emit every requested artifact from the same transient typed IR.
-Never generate a JavaScript Profile and then independently generate a Python or
-other-language Profile. The paired files share one fingerprint and must be
-verified before publication; no seed, stored IR, or fingerprint-to-recipe
-registry is introduced.
+The Python backend extends one CLI generation operation to emit both requested
+artifacts from the same transient typed IR. Never generate a JavaScript Profile
+and then independently generate a Python or other-language Profile. Paired
+files share one fingerprint and must be verified before publication; no seed,
+stored IR, or fingerprint-to-recipe registry is introduced. Any additional
+language must join this same-generation and bidirectional-verification model.
 
 ## Documentation ownership
 
@@ -77,13 +77,14 @@ and markers. Never describe context as a secret key or put authorization logic
 inside profile callbacks.
 
 Generated profile files are source artifacts. Produce them with
-`fise generate <output-file>`, commit them to Git, and never hand-edit their
-opaque pipeline. Generation verifies forward/reverse text, structured, binary
-full/edge coverage, range/progressive, JavaScript, WASM, and worker
-interoperability before writing. Existing
-paths fail closed; new paths use atomic no-clobber publication, and `--override`
-is only for intentional atomic profile replacement. `fise verify
-<profile-file>` repeats the same checks without changing the file.
+`fise generate <output-file>` or the same-IR Python pair form, commit them to
+Git, and never hand-edit their opaque pipeline. Generation verifies
+forward/reverse text, structured, binary full/edge coverage, range/progressive,
+JavaScript, WASM, and worker interoperability before writing; Python mode also
+verifies native and exact cross-language wire behavior. Existing paths fail
+closed; new paths use atomic no-clobber publication, and `--override` is only
+for intentional atomic profile replacement. `fise verify <profile-file>
+[python-profile]` repeats the relevant checks without changing files.
 
 Runnable examples are packed public-API checks. They must import published
 entry points, assert their result, and be listed in `examples/run-all.mjs`.

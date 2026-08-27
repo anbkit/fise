@@ -24,6 +24,8 @@ pnpm-debug.log*
 # Python reference artifacts
 __pycache__/
 *.py[cod]
+python/build/
+python/src/*.egg-info/
 
 # OS
 .DS_Store

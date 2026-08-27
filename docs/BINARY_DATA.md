@@ -15,6 +15,24 @@ FISE is not an incremental network or storage format.
 
 Full mode is the default and requires no options.
 
+The Python runtime uses the same wire with idiomatic option and method names:
+
+```python
+media_fise = Fise(profile, binary="edges", edge_bytes=4 * 1024 * 1024)
+encrypted_file = media_fise.encrypt(file_bytes, context)
+selected = media_fise.decrypt_range(encrypted_file, 1_000, 2_000, context)
+
+for chunk in media_fise.decrypt_progressive(
+    encrypted_file,
+    context,
+    chunk_size=256 * 1024,
+):
+    consume(chunk)
+```
+
+Python `bytes` corresponds to top-level JavaScript binary data. Its range is
+also half-open, and its progressive iterator is pull-driven and synchronous.
+
 Edge mode is inspired by the practical head/tail pattern used for large video
 files. It keeps one ordinary FISE envelope and records the resolved policy in
 that envelope:

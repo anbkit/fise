@@ -3,6 +3,7 @@ const examples = [
 	"api-session.mjs",
 	"web-application.mjs",
 	"agent-stream.mjs",
+	"python-agent-interop.mjs",
 	"binary-file.mjs",
 	"binary-restoration.mjs",
 	"backends.mjs",

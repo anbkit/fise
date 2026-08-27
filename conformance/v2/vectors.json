@@ -4,7 +4,7 @@
     "major": 2,
     "minor": 0
   },
-  "profileFingerprint": "f05f6a3a0c8b679ea3e93e524597c99b",
+  "profileFingerprint": "fad10ce453c6c23734ea39a3e8770514",
   "contexts": [
     {
       "id": "default",
@@ -259,8 +259,8 @@
       "kind": "json",
       "inputJson": "\"FISE works across runtimes 🌐\"",
       "transport": "base64url",
-      "expectedTransport": "RklTRQIAKADwX2o6DItnnqPpPlJFl8mbAAAAIwAAAAAAAAAAAAAAAIYAONuIwWwX_kS6IQL6j67IXA0T3Ogu3f7IZadThVwcOTOHAnZ98w",
-      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b00000023000000000000000000000000860038db88c16c17fe44ba2102fa8faec85c0d13dce82eddfec865a753855c1c39338702767df3"
+      "expectedTransport": "RklTRQIAKAD60QzkU8bCNzTqOaPodwUUAAAAIwAAAAAAAAAAAAAAAFLVvIxMncASIPqO-xWSP75g11mXFkSD1Vx7VQpgG9fWUOE0KpEw3g",
+      "wireHex": "4649534502002800fad10ce453c6c23734ea39a3e87705140000002300000000000000000000000052d5bc8c4c9dc01220fa8efb15923fbe60d75997164483d55c7b550a601bd7d650e1342a9130de"
     },
     {
       "id": "structured",
@@ -274,8 +274,8 @@
         7
       ],
       "transport": "base64url",
-      "expectedTransport": "RklTRQIAKADwX2o6DItnnqPpPlJFl8mbAAAAMgAAAAAAAAAAAAAAAN1LeRiprIfOk5fuu7cIw4_H58SqL741qLnWwxnWmmafkYHxvxG4FGhGGlTcnArGYKdRcR9Peg",
-      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b00000032000000000000000000000000dd4b7918a9ac87ce9397eebbb708c38fc7e7c4aa2fbe35a8b9d6c319d69a669f9181f1bf11b81468461a54dc9c0ac660a751711f4f7a"
+      "expectedTransport": "RklTRQIAKAD60QzkU8bCNzTqOaPodwUUAAAAMgAAAAAAAAAAAAAAALYhCcY7P769WpFtY0j2LPGknRPzw0PqGy0Nao-Uf8Db86eh9tH617RAFZDMnA4U4Vkpxel91g",
+      "wireHex": "4649534502002800fad10ce453c6c23734ea39a3e877051400000032000000000000000000000000b62109c63b3fbebd5a916d6348f62cf1a49d13f3c343ea1b2d0d6a8f947fc0dbf3a7a1f6d1fad7b4401590cc9c0e14e15929c5e97dd6"
     },
     {
       "id": "structured-compressed",
@@ -289,8 +289,8 @@
         7
       ],
       "transport": "base64url",
-      "expectedTransport": "RklTRQIAKADwX2o6DItnnqPpPlJFl8mbAAAASwAAAAAAAAAAAAAAAN1ohmirbdqbBJcO63cBlbOfMDH8S9os7pcxtRdm3BVmzAXeE4LRSbnpmY3HZTC9O883VI86SwEsA7_lNdXcUxQKPXl0GDJObKg-tUScFZQ",
-      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b0000004b000000000000000000000000dd688668ab6dda9b04970eeb770195b39f3031fc4bda2cee9731b51766dc1566cc05de1382d149b9e9998dc76530bd3bcf37548f3a4b012c03bfe535d5dc53140a3d797418324e6ca83eb5449c1594"
+      "expectedTransport": "RklTRQIAKAD60QzkU8bCNzTqOaPodwUUAAAASwAAAAAAAAAAAAAAALYnNOBjM3VRGZGcLdpBbb0APKOUi1vvqUWdaLq_4BKFl3xRB-0fGXYWxRzb5fOMwM8Ig9575-nRn98Odk05Tw6cdyNGXmb2YIhj5ATRB78",
+      "wireHex": "4649534502002800fad10ce453c6c23734ea39a3e87705140000004b000000000000000000000000b62734e06333755119919c2dda416dbd003ca3948b5befa9459d68babfe01285977c5107ed1f197616c51cdbe5f38cc0cf0883de7be7e9d19fdf0e764d394f0e9c7723465e66f6608863e404d107bf"
     },
     {
       "id": "binary-full",
@@ -318,7 +318,7 @@
           "ff"
         ]
       },
-      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b00000012000000000000000000000000ddf186b3369db48a185dbf7a86e36bc9efbbaaf89aa7"
+      "wireHex": "4649534502002800fad10ce453c6c23734ea39a3e877051400000012000000000000000000000000b62034b02336d24efa2af39b960e0c1a26358596ecdb"
     },
     {
       "id": "binary-edges",
@@ -353,7 +353,7 @@
           "1c1d1e1f"
         ]
       },
-      "wireHex": "4649534502002801f05f6a3a0c8b679ea3e93e524597c99b00000022000000060000000000000000d041048f3fe02cb10607080956eecf330a0b0c0d0e0f10111213141516171819910133c58757"
+      "wireHex": "4649534502002801fad10ce453c6c23734ea39a3e877051400000022000000060000000000000000b4f34d8108c5dcf4060708090a0b0c0d9e4242580e0f10111213141516171819a98307df8e6f"
     },
     {
       "id": "binary-edges-ttl",
@@ -394,7 +394,7 @@
           "3f"
         ]
       },
-      "wireHex": "4649534502002801f05f6a3a0c8b679ea3e93e524597c99b0000004200000008000000006b49d29292c7692e5fdcd913ef3208090a0b0c0d0e0f101112131415161718191a1b1c1d99833e6f1e1f202122232425262728292a2b2c2d2e2f3031323334353637f0d56f5c77cb0f42"
+      "wireHex": "4649534502002801fad10ce453c6c23734ea39a3e87705140000004200000008000000006b49d2921c91023f1af33a46d84008090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c3789b6dd2d2e2f30313233343536375dc7fc66a86a127c"
     },
     {
       "id": "structured-ttl",
@@ -413,8 +413,8 @@
       "clockMilliseconds": 1800000000123,
       "expiresAtSeconds": "1800000031",
       "transport": "base64url",
-      "expectedTransport": "RklTRQIAKADwX2o6DItnnqPpPlJFl8mbAAAAJAAAAAAAAAAAa0nSH3LG_eldLJF2fkcw38cMGMrI4NPXx-Y_ph56hezgm3fg95puMXb3k6k",
-      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b0000002400000000000000006b49d21f72c6fde95d2c91767e4730dfc70c18cac8e0d3d7c7e63fa61e7a85ece09b77e0f79a6e3176f793a9"
+      "expectedTransport": "RklTRQIAKAD60QzkU8bCNzTqOaPodwUUAAAAJAAAAAAAAAAAa0nSH6PZpc8HK5PdKnPxiUecq-_bPjA0STanwX2DHNwvDpCZhs5X8Y9liG0",
+      "wireHex": "4649534502002800fad10ce453c6c23734ea39a3e87705140000002400000000000000006b49d21fa3d9a5cf072b93dd2a73f189479cabefdb3e30344936a7c17d831cdc2f0e909986ce57f18f65886d"
     }
   ],
   "freshness": [
@@ -557,9 +557,9 @@
       "id": "profile-fingerprint",
       "sourceEnvelope": "structured",
       "mutation": {
-        "type": "replace",
+        "type": "xor",
         "offset": 8,
-        "hex": "00"
+        "value": 1
       },
       "errorCode": "PROFILE_MISMATCH"
     },
@@ -604,7 +604,7 @@
       "sourceEnvelope": "structured",
       "mutation": {
         "type": "xor",
-        "offset": 52,
+        "offset": 57,
         "value": 1
       },
       "errorCode": "MARKER_MISMATCH"
@@ -644,43 +644,43 @@
     {
       "id": "missing-metadata",
       "payloadHex": "01",
-      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b000000010000000000000000000000008694c6c06a",
+      "wireHex": "4649534502002800fad10ce453c6c23734ea39a3e877051400000001000000000000000000000000acd8661b52",
       "errorCode": "INVALID_PAYLOAD"
     },
     {
       "id": "metadata-version",
       "payloadHex": "02017b7d",
-      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b00000004000000000000000000000000bafc09f31c00d825",
+      "wireHex": "4649534502002800fad10ce453c6c23734ea39a3e87705140000000400000000000000000000000050d53462e0b5fae0",
       "errorCode": "INVALID_PAYLOAD"
     },
     {
       "id": "unknown-type",
       "payloadHex": "0104",
-      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b00000002000000000000000000000000865976147d9f",
+      "wireHex": "4649534502002800fad10ce453c6c23734ea39a3e87705140000000200000000000000000000000052c65701e8eb",
       "errorCode": "INVALID_PAYLOAD"
     },
     {
       "id": "invalid-utf8",
       "payloadHex": "0101ff",
-      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b000000030000000000000000000000008600d1b0aa025a",
+      "wireHex": "4649534502002800fad10ce453c6c23734ea39a3e87705140000000300000000000000000000000052d55d12503c5a",
       "errorCode": "INVALID_PAYLOAD"
     },
     {
       "id": "noncanonical-json",
       "payloadHex": "01017b2262223a312c2261223a327d",
-      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b0000000f0000000000000000000000008600d8bd820d09b07d62e8d41895a01fc37a9d",
+      "wireHex": "4649534502002800fad10ce453c6c23734ea39a3e87705140000000f00000000000000000000000052d5fae843dad404af395be7e3f76222fd704f",
       "errorCode": "INVALID_PAYLOAD"
     },
     {
       "id": "compressed-truncated",
       "payloadHex": "010300000100",
-      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b0000000600000000000000000000000086edb7c6f828e047779b",
+      "wireHex": "4649534502002800fad10ce453c6c23734ea39a3e8770514000000060000000000000000000000005281074ca5786b255c99",
       "errorCode": "INVALID_PAYLOAD"
     },
     {
       "id": "compressed-invalid-block",
       "payloadHex": "01030000010000",
-      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b0000000700000000000000000000000086edb7c6779bdf5ff5c90d",
+      "wireHex": "4649534502002800fad10ce453c6c23734ea39a3e8770514000000070000000000000000000000005281074ca55f3796907827",
       "errorCode": "INVALID_PAYLOAD"
     }
   ],

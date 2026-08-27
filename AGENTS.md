@@ -31,16 +31,20 @@ profile lifecycle rule, or security statement changes.
 
 - Generate profiles only through `fise generate`; never hand-edit generated
   profile code or call the low-level generated-profile ABI manually.
-- Generate exactly once for a compatibility domain. Every producer and consumer
-  must use that exact file and the same positional context contract.
+- Generate exactly once for a compatibility domain. JavaScript-only domains
+  share the exact JavaScript file. Python-backend domains use `--backend python`
+  so one invocation emits the JavaScript/Python pair from the same transient IR.
+  Every producer and consumer must use that exact artifact or pair and the same
+  positional context contract.
 - In a monorepo, prefer one canonical profile in a shared package instead of
   duplicate copies.
 - With separate repositories, generate in one chosen owner. If the destination
   repository or folder is not explicit, ask the user where or how to distribute
-  the exact file before copying it. Never generate a second profile on the other
-  side.
-- After distribution, run `fise verify` for each copy and confirm the reported
-  fingerprint matches.
+  the exact file or language pair before copying it. Never generate a second
+  profile on the other side.
+- After distribution, run `fise verify` for each JavaScript or Python copy and
+  run paired verification for JavaScript/Python deployments. Confirm every
+  reported fingerprint matches.
 - Do not regenerate a profile during install, build, application startup, or
   test setup. Commit generated profiles and treat replacement as a compatibility
   change. Existing envelopes still require their previous profile.
@@ -55,8 +59,9 @@ profile lifecycle rule, or security statement changes.
   explicitly requests it.
 - Add focused success, failure, malformed-input, and interoperability tests for
   behavior changes.
-- Generated JavaScript, WASM, workers, full/edge coverage, range/progressive operations,
-  documentation, and packed npm behavior must remain consistent.
+- Generated JavaScript/Python profiles, the Python runtime, JavaScript, WASM,
+  workers, full/edge coverage, range/progressive operations, documentation, and
+  packed npm behavior must remain consistent.
 
 ## Verification
 

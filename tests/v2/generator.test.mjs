@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { Fise, Profile } from "fise";
+import { pairedPythonPath } from "../../dist/v2/generator.js";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = dirname(dirname(testDirectory));
@@ -86,10 +87,96 @@ test("CLI verifies before writing and requires --override to replace a profile",
 	}
 });
 
+test("CLI generates and verifies one JavaScript-Python compatibility pair", () => {
+	const temporaryDirectory = mkdtempSync(join(testDirectory, ".generated-python-"));
+	const javascriptPath = join(temporaryDirectory, "profile.generated.mjs");
+	const pythonPath = join(temporaryDirectory, "profile_generated.py");
+	try {
+		const generated = runCli(["generate", "--backend", "python", javascriptPath]);
+		assert.equal(generated.status, 0, generated.stderr);
+		assert.match(generated.stdout, new RegExp(`Generated JavaScript ${escapeRegex(javascriptPath)}`));
+		assert.match(generated.stdout, new RegExp(`Generated Python ${escapeRegex(pythonPath)}`));
+		assert.match(generated.stdout, /JavaScript ↔ Python exact wire/);
+		assert.match(generated.stdout, /Commit both generated files as one compatibility pair/);
+		const javascriptSource = readFileSync(javascriptPath, "utf8");
+		const pythonSource = readFileSync(pythonPath, "utf8");
+		const fingerprint = generated.stdout.match(/Profile ([0-9a-f]{32})/)?.[1];
+		assert.ok(fingerprint);
+		assert.match(javascriptSource, new RegExp(fingerprint));
+		assert.match(pythonSource, new RegExp(fingerprint));
+		assert.doesNotMatch(pythonSource, /#/);
+
+		const pythonOnly = runCli(["verify", pythonPath]);
+		assert.equal(pythonOnly.status, 0, pythonOnly.stderr);
+		assert.match(pythonOnly.stdout, new RegExp(`Profile ${fingerprint}`));
+		assert.match(pythonOnly.stdout, /Python text\/structured\/binary/);
+
+		const paired = runCli(["verify", javascriptPath, pythonPath]);
+		assert.equal(paired.status, 0, paired.stderr);
+		assert.match(paired.stdout, new RegExp(`Profile ${fingerprint}`));
+		assert.match(paired.stdout, /JavaScript ↔ Python exact wire/);
+
+		const alternateJavaScriptPath = join(temporaryDirectory, "alternate.mjs");
+		const alternatePythonPath = join(temporaryDirectory, "alternate.py");
+		const alternate = runCli([
+			"generate",
+			alternateJavaScriptPath,
+			"--backend",
+			"python"
+		]);
+		assert.equal(alternate.status, 0, alternate.stderr);
+		const mismatch = runCli(["verify", javascriptPath, alternatePythonPath]);
+		assert.equal(mismatch.status, 1);
+		assert.match(mismatch.stderr, /PROFILE_MISMATCH|fingerprint/i);
+		rmSync(alternateJavaScriptPath);
+		rmSync(alternatePythonPath);
+
+		const refused = runCli(["generate", javascriptPath, "--backend", "python"]);
+		assert.equal(refused.status, 1);
+		assert.equal(readFileSync(javascriptPath, "utf8"), javascriptSource);
+		assert.equal(readFileSync(pythonPath, "utf8"), pythonSource);
+
+		const replaced = runCli([
+			"generate",
+			javascriptPath,
+			"--backend",
+			"python",
+			"--override"
+		]);
+		assert.equal(replaced.status, 0, replaced.stderr);
+		assert.notEqual(readFileSync(javascriptPath, "utf8"), javascriptSource);
+		assert.notEqual(readFileSync(pythonPath, "utf8"), pythonSource);
+		assert.deepEqual(
+			readdirSync(temporaryDirectory).sort(),
+			["profile.generated.mjs", "profile_generated.py"]
+		);
+	} finally {
+		rmSync(temporaryDirectory, { recursive: true, force: true });
+	}
+});
+
+test("Python pair paths are adjacent and importable", () => {
+	assert.equal(
+		pairedPythonPath(join("shared", "fise.profile.ts")),
+		join("shared", "fise_profile.py")
+	);
+	assert.equal(
+		pairedPythonPath(join("shared", "9-profile.mjs")),
+		join("shared", "_9_profile.py")
+	);
+	assert.equal(
+		pairedPythonPath(join("shared", "class.js")),
+		join("shared", "_class.py")
+	);
+});
+
 test("CLI has one fail-closed command contract", () => {
 	assert.equal(runCli([]).status, 0);
-	assert.match(runCli([]).stdout, /fise generate <output-file> \[--override\]/);
-	assert.match(runCli([]).stdout, /fise verify <profile-file>/);
+	assert.match(
+		runCli([]).stdout,
+		/fise generate <output-file> \[--backend python\] \[--override\]/
+	);
+	assert.match(runCli([]).stdout, /fise verify <profile-file> \[python-profile\]/);
 	const help = runCli(["help"]);
 	assert.equal(help.status, 0);
 	assert.equal(help.stdout, runCli(["--help"]).stdout);
@@ -113,7 +200,10 @@ test("CLI has one fail-closed command contract", () => {
 		["generate", "profile.mjs", "--seed", "1234"],
 		["generate", "profile.mjs", "--revision", "2"],
 		["generate", "profile.mjs", "--manifest", "old.json"],
-		["generate", "--override", "profile.mjs"],
+		["generate", "profile.mjs", "--backend", "javascript"],
+		["generate", "profile.mjs", "--backend", "ruby"],
+		["generate", "profile.mjs", "--backend"],
+		["generate", "profile.mjs", "--backend", "python", "--backend", "python"],
 		["generate", "profile.mjs", "--override", "--override"],
 		["verify", "profile.mjs", "--override"],
 		["help", "unexpected"],
@@ -223,4 +313,8 @@ function runCli(arguments_) {
 		cwd: repositoryRoot,
 		encoding: "utf8"
 	});
+}
+
+function escapeRegex(source) {
+	return source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

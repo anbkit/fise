@@ -1,13 +1,14 @@
 # Using FISE in a web application
 
 FISE fits a web application when the backend and frontend can import the same
-generated Profile and reconstruct the same optional context values. The backend
-usually encrypts an API value; the frontend decrypts it before schema validation
-and use.
+generated Profile semantics and reconstruct the same optional context values.
+JavaScript systems share one artifact; Python backends use the paired artifact
+emitted beside the frontend Profile. The backend usually encrypts an API value;
+the frontend decrypts it before schema validation and use.
 
 ```text
-Backend                    Shared Profile                    Frontend
-new Fise(profile)  <------- exact generated file ------->  new Fise(profile)
+Backend                  Generated Profile                  Frontend
+new Fise(profile)  <--- exact file or same-IR pair --->  new Fise(profile)
 
 data -> encrypt()  -------- JSON or binary response ------> decrypt() -> validate -> app
              same ordered, client-visible context values
@@ -24,10 +25,10 @@ npm install fise
 npx fise generate ./src/fise.profile.ts
 ```
 
-Generate once for one compatibility domain. In a monorepo, place the Profile
-in a shared package. With separate backend and frontend repositories, choose
-one owner and copy that exact generated file to the other repository. Verify
-each copy and compare the printed fingerprint:
+Generate once for one compatibility domain. In a JavaScript monorepo, place the
+Profile in a shared package. With separate backend and frontend repositories,
+choose one owner and distribute the exact generated file or same-IR language
+pair. Verify each artifact and compare the printed fingerprint:
 
 ```sh
 npx fise verify ./src/fise.profile.ts
@@ -35,9 +36,17 @@ npx fise verify ./src/fise.profile.ts
 
 Do not generate one Profile independently on each side.
 
-The current generated artifact is JavaScript/TypeScript code. A non-JavaScript
-backend cannot recreate it from a saved seed because FISE stores no generation
-recipe; cross-language artifact generation is not yet a supported workflow.
+For a Python backend, install the Python 3.10+ runtime and generate both language
+artifacts together:
+
+```sh
+python -m pip install fise
+npx fise generate ./src/fise.profile.ts --backend python
+npx fise verify ./src/fise.profile.ts ./src/fise_profile.py
+```
+
+The CLI emits both from one transient IR; there is still no saved seed or recipe
+from which a separately generated backend artifact could be recreated.
 
 ## 2. Create one instance
 
@@ -46,6 +55,15 @@ import { Fise } from "fise";
 import profile from "./fise.profile.js";
 
 const fise = new Fise(profile);
+```
+
+Python uses its paired generated instance:
+
+```python
+from fise import Fise
+from fise_profile import profile
+
+fise = Fise(profile)
 ```
 
 The same instance handles text, JSON-safe structured data, and binary data.
@@ -84,6 +102,16 @@ const responseBody = {
   data: fise.encrypt(order, context),
   sequence: responseSequence
 };
+```
+
+The equivalent Python backend operation is direct:
+
+```python
+context = [session_id, user_id, "orders", "v1", response_sequence]
+response_body = {
+    "data": fise.encrypt(order, context),
+    "sequence": response_sequence,
+}
 ```
 
 For text and structured input, `data` is an unpadded Base64URL string and can
@@ -133,7 +161,9 @@ truncated stream was complete.
 
 Run [`examples/agent-stream.mjs`](../examples/agent-stream.mjs) for an actual
 loopback SSE stream containing text deltas, a tool call, a tool result, and a
-completion event.
+completion event. The paired
+[`examples/python-agent-interop.mjs`](../examples/python-agent-interop.mjs)
+proves a Python-produced agent event restores with the frontend Profile.
 
 ## 6. Exchange binary data
 
@@ -208,6 +238,8 @@ memory and responsiveness on target devices.
 Run [`examples/web-application.mjs`](../examples/web-application.mjs) for an
 actual loopback HTTP JSON and binary flow, and
 [`examples/agent-stream.mjs`](../examples/agent-stream.mjs) for agent event
-streaming. See [binary data](./BINARY_DATA.md), [Profiles](./PROFILES.md),
+streaming, and
+[`examples/python-agent-interop.mjs`](../examples/python-agent-interop.mjs) for
+Python-to-JavaScript agent output. See [binary data](./BINARY_DATA.md), [Profiles](./PROFILES.md),
 [WASM and workers](./WASM.md), and the [security boundary](./SECURITY.md) for
 the detailed contracts.

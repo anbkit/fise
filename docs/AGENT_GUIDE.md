@@ -8,7 +8,8 @@ ownership, and prevent frontend/backend profile drift.
 
 - The generated `Profile` is executable transformation code.
 - Every side that encrypts or decrypts a FISE envelope must use the exact same
-  generated profile.
+  generated Profile semantics: one shared file for JavaScript-only systems, or
+  the paired JavaScript/Python artifacts emitted by one generation command.
 - Context is a positional application contract. Both sides must agree on the
   meaning and order of its positions and provide matching values for each
   operation.
@@ -30,7 +31,8 @@ envelope + exact Profile + matching context -> original data
    creating copies or changing imports.
 
 Do not generate a frontend profile and a backend profile independently. Every
-generation is intentionally different.
+generation is intentionally different. For a Python backend, one invocation
+must emit both language artifacts from the same transient IR.
 
 ## Generate and verify once
 
@@ -41,8 +43,16 @@ npx fise generate ./src/fise.profile.ts
 npx fise verify ./src/fise.profile.ts
 ```
 
-Commit the generated file. Do not hand-edit it and do not regenerate it during
-install, build, startup, or test setup.
+For a Python backend, choose the backend language in that same operation and
+verify the complete pair:
+
+```sh
+npx fise generate ./src/fise.profile.ts --backend python
+npx fise verify ./src/fise.profile.ts ./src/fise_profile.py
+```
+
+Commit the generated file or complete pair. Do not hand-edit it and do not
+regenerate it during install, build, startup, or test setup.
 
 Use `--override` only for an intentional compatibility change:
 
@@ -68,19 +78,30 @@ Update both applications to import that owner. Do not copy the generated source
 into both application folders unless the repository has an explicit mirroring
 contract.
 
+When the backend is Python, the shared owner contains both generated files:
+
+```text
+packages/fise-profile/
+        ├── fise.profile.ts  -> frontend
+        └── fise_profile.py  -> Python backend
+```
+
+These are one compatibility pair, not two independently generated Profiles.
+
 ### Separate repositories
 
-Generate once in the chosen owner, then distribute that exact file through a
-copy, CI artifact, or internal package. If the target is not already specified,
-ask the user before copying. A useful question is:
+Generate once in the chosen owner, then distribute that exact file or generated
+language pair through a copy, CI artifact, or internal package. If the target
+is not already specified, ask the user before copying. A useful question is:
 
-> The FISE profile was generated and verified at `<source>`. Which frontend or
-> backend destination should receive this exact file? I will copy/sync it and
-> will not generate another profile there.
+> The FISE Profile was generated and verified at `<source>`. Which frontend and
+> backend destinations should receive these exact generated artifacts? I will
+> copy/sync them and will not generate another Profile there.
 
 After copying, run `fise verify` in both repositories and compare the reported
-profile fingerprint. The values must match. If possible, also enforce exact
-file equality in CI.
+Profile fingerprint. For a JavaScript/Python deployment, also run the paired
+form wherever both files are available. The values must match. For copies of
+the same language artifact, enforce exact file equality in CI when possible.
 
 ## Define context together
 
@@ -113,6 +134,17 @@ import profile from "./fise.profile.js";
 const fise = new Fise(profile);
 const envelope = fise.encrypt(data, context);
 const restored = fise.decrypt(envelope, context);
+```
+
+Python backend code stays equally direct:
+
+```python
+from fise import Fise
+from fise_profile import profile
+
+fise = Fise(profile)
+envelope = fise.encrypt(data, context)
+restored = fise.decrypt(envelope, context)
 ```
 
 One Profile supports strings, JSON-safe structured values, and binary data.
@@ -190,13 +222,15 @@ Range and progressive methods remain strict.
 
 ## Completion checklist
 
-- One canonical generated profile exists.
-- Frontend and backend import that profile or verified exact copies.
+- One canonical generated Profile or same-IR language pair exists.
+- Frontend and backend import the correct generated artifact or verified exact
+  copies for their languages.
 - No side generated an independent profile.
 - The positional context contract is documented and shared.
 - Context contains no authentication token, protected cookie, or other
   credential exposed only for FISE.
-- `fise verify` passes and reports the same fingerprint everywhere.
+- `fise verify` passes and reports the same fingerprint everywhere; paired
+  JavaScript/Python verification passes when that backend is used.
 - Relevant application tests exercise encrypt/decrypt with realistic context.
 - Restored structured values pass application-owned schema validation.
 - Profile replacement has an atomic or versioned rolling-deployment plan.
@@ -208,4 +242,5 @@ Range and progressive methods remain strict.
   normal-runtime freshness rather than a security boundary.
 - Raw fallback is either disabled or explicitly documented, validated, and
   monitored at the application boundary.
-- The generated file and context contract are committed together.
+- The generated file or complete language pair and context contract are
+  committed together.

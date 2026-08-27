@@ -11,11 +11,13 @@ tools once observed at that client.
 FISE—Fast Interoperable Structured Envelope—explores a narrower engineering
 goal: replace a directly consumable application representation with a strict,
 generated, profile-specific representation. Each FISE 2.0 profile is a generated
-source artifact that applications treat as one immutable compatibility unit.
-Its frozen imported instance contains a randomly generated but deterministic
-reversible byte pipeline, its inverse, context mixing, layout calculations, and
-matching JavaScript/WASM execution. Producer and consumer deploy the same
-public file and version it through ordinary source control.
+Profile that applications treat as one immutable compatibility unit. A
+JavaScript deployment uses one generated source artifact; a Python backend uses
+the JavaScript/Python pair emitted from the same transient IR. Each imported
+instance contains the same randomly generated but deterministic reversible byte
+pipeline, inverse, context mixing, and layout calculations, with matching
+JavaScript, Python, and JavaScript/WASM execution. Producer and consumer version
+the exact artifact or pair through ordinary source control.
 
 The central hypothesis is not that FISE creates secrecy. It is that semantic
 diversity across generated profiles can reduce reuse of static signatures and
@@ -57,7 +59,7 @@ FISE 2.0 makes the following bounded engineering claims:
 1. A generated profile is a single immutable compatibility unit.
 2. Generation independently samples meaningful reversible semantics; its
    variability is not limited to identifiers or dead source changes.
-3. The generated JavaScript, WASM, and worker paths are byte-compatible.
+3. The generated JavaScript, Python, WASM, and worker paths are byte-compatible.
 4. Wire parsers are strict, versioned, bounded, and reject invalid input; the
    default runtime propagates those failures.
 5. Byte-local kernels permit direct range and pull-driven restoration from one
@@ -85,11 +87,12 @@ forward and reverse operations, not a cryptographic guarantee.
 
 ## 3. Design principles
 
-### 3.1 One generated object
+### 3.1 One generated Profile
 
-The CLI emits one module whose default export is a `Profile` instance. The
-application does not compose public rules, select a complexity tier, or manage
-a separate manifest:
+The CLI emits one JavaScript module whose default export is a `Profile`
+instance. When a Python backend is selected, that same operation emits an
+adjacent Python module from the same in-memory IR. The application does not
+compose public rules, select a complexity tier, or manage a separate manifest:
 
 ```ts
 import profile from "./fise.profile.js";
@@ -134,8 +137,8 @@ For accepted structured values, canonical JSON follows RFC 8785 primitive
 serialization and UTF-16 property ordering. FISE further rejects negative zero
 and unpaired surrogates, preserves Unicode without normalization, and treats
 numbers as IEEE-754 binary64. A machine-readable conformance corpus freezes the
-resulting JSON, UTF-8, payload, compression, transport, and wire bytes for
-future language runtimes.
+resulting JSON, UTF-8, payload, compression, transport, and wire bytes for the
+current Python runtime and future language runtimes.
 
 Canonical structured UTF-8 of at least 256 bytes is encoded as one independent,
 deterministic LZ4 block only when that block plus its four-byte original-length
@@ -484,16 +487,18 @@ they must not be translated into cryptographic strength.
 
 ## 10. Interoperability and deployment
 
-FISE 2.0 currently treats the generated module as the compatibility artifact.
-Producer and consumer must import the exact same committed file. Multiple
-profiles are allowed for independent application domains, but they are not tied
-to data types.
+FISE 2.0 treats one generated Profile as the compatibility artifact. A
+JavaScript-only deployment imports the exact same committed file. A Python
+backend and JavaScript frontend import the exact pair emitted by
+`fise generate <js-path> --backend python`; both files carry one fingerprint and
+produce the same wire. Multiple Profiles are allowed for independent
+application domains, but they are not tied to data types.
 
-In a monorepo, one shared package should own the generated module. With separate
-repositories, one side generates it and distributes that exact artifact to the
-other side; independent generation is incompatible by design. The applications
-also share the positional context convention, while operation-specific values
-remain outside the profile and envelope.
+In a monorepo, one shared package should own the generated artifact or pair.
+With separate repositories, one side generates once and distributes the exact
+language artifacts; independent generation is incompatible by design. The
+applications also share the positional context convention, while
+operation-specific values remain outside the Profile and envelope.
 
 Profile replacement must be coordinated. An atomic release deploys matching
 producer and consumer code together. A rolling web release needs an
@@ -502,12 +507,12 @@ continue to reach the old producer until clients and caches drain. FISE does not
 add Profile-history lookup or a legacy decoder for this purpose.
 
 Because the generator intentionally stores no seed or IR artifact, another
-language backend cannot be recreated later from a generation recipe. True
-multi-language generation would need all target artifacts emitted and validated
-in the same invocation. That is a future extension, not an implicit property of
-the current TypeScript package. The packaged JavaScript conformance Profile and
-vectors freeze the wire baseline for that work; they are not evidence that a
-Python runtime already exists.
+language backend cannot be recreated later from a generation recipe. The Python
+workflow therefore emits and validates both target artifacts in the same
+invocation. The packaged JavaScript/Python conformance pair and vectors provide
+accepted, malformed, and exact bidirectional evidence. Any additional language
+must join that same-generation, same-fingerprint, bidirectional model before it
+can claim FISE 2.0 compatibility.
 
 Package and wire 2.0 intentionally remove 1.x functions, default profiles,
 manifests, builders, rotation artifacts, the separate legacy string wire, and
@@ -543,7 +548,7 @@ profile-governed application representation. A stateless CLI creates different
 meaningful reversible pipelines; a profile-bound class applies them uniformly
 to structured and binary data; strict parsers reject ambiguity by default;
 byte-local kernels enable direct selective and lazy byte restoration; and
-JavaScript, WASM, and workers share the same semantics. Adaptive structured
+JavaScript, Python, WASM, and workers share the same semantics. Adaptive structured
 compression reduces the transport penalty for repetitive JSON without changing
 the public API. Optional
 constructor TTL adds a bounded normal-runtime freshness policy, and applications

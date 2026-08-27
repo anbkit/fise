@@ -74,7 +74,7 @@ let packMetadata;
 let failure;
 
 try {
-	runGate("node-tests", npm, ["test"]);
+	runGate("runtime-tests", npm, ["test"]);
 	runGate("runnable-examples", npm, ["run", "verify:examples"]);
 	runGate("package-contract", npm, ["run", "verify:package"]);
 	runGate("benchmark-types", npm, ["run", "verify:benchmarks"]);
@@ -259,6 +259,7 @@ function runGate(name, command, arguments_, options = {}) {
 function parseCounts(output) {
 	const counts = {};
 	assignMatch(counts, "tests", output, /# tests (\d+)/);
+	assignMatch(counts, "pythonTests", output, /Ran (\d+) tests/);
 	assignMatch(counts, "passed", output, /# pass (\d+)/);
 	assignMatch(counts, "failed", output, /# fail (\d+)/);
 	assignMatch(counts, "runnableExamples", output, /Verified (\d+) runnable FISE examples/);

@@ -9,8 +9,8 @@ optional raw fallback. Multi-byte integers are unsigned big-endian.
 
 The public runtime accepts either:
 
-- a JavaScript string or JSON-safe structured value; or
-- a top-level `Uint8Array`.
+- a string or JSON-safe structured value; or
+- top-level binary data (`Uint8Array` in JavaScript, `bytes` in Python).
 
 For every value FISE accepts, canonical output follows the JSON Canonicalization
 Scheme in [RFC 8785](https://www.rfc-editor.org/rfc/rfc8785.html): no
@@ -38,6 +38,14 @@ accessors, symbols, functions, `undefined`, class instances, and nested typed
 arrays are invalid. FISE canonicalizes an already constructed value; it does
 not parse source JSON or recover duplicate property names discarded by an
 upstream parser.
+
+The Python binding maps this contract to exact built-in `dict`, `list`, `str`,
+`bool`, `None`, `int`, and `float` values. It rejects tuples, custom containers,
+nested binary values, non-string keys, and integers that are not exactly
+representable as binary64. When canonical ECMAScript number text is an integer
+token whose mathematical integer differs from its binary64 value, Python
+restores the interoperable `float`; JSON does not preserve a separate integer
+versus floating-point leaf type across languages.
 
 The logical plaintext begins with a fixed two-byte metadata segment:
 
@@ -124,8 +132,9 @@ FISE has one binary wire. `encrypt()` represents that wire according to the
 plaintext input:
 
 - a string or JSON-safe structured value returns canonical unpadded Base64URL,
-  suitable for a JSON API field;
-- top-level binary data returns a newly owned `Uint8Array`.
+  suitable for a JSON API field (`string` in JavaScript, `str` in Python);
+- top-level binary data returns newly owned binary output (`Uint8Array` in
+  JavaScript, `bytes` in Python).
 
 `decrypt()` accepts either representation, inspects the transformed metadata,
 and returns the original data type. Passing the binary bytes behind a
@@ -235,10 +244,17 @@ range with its logical absolute offset. This byte-local requirement enables
 direct range, progressive, parallel, and edge-only work without a second
 container format.
 
-CLI-generated Profiles preserve identical byte semantics in JavaScript, WASM,
-and workers. Generated source is a versioned compatibility artifact and must be
-imported unchanged; the runtime does not attest manually edited source from the
-supplied fingerprint.
+The Python generated ABI carries the same arguments and unsigned arithmetic,
+with `transformed_length` and `operation_binding_length` as its layout field
+spellings and immutable `bytes` kernel input/output. It intentionally omits the
+frontend-only generated WASM module.
+
+CLI-generated Profiles preserve identical byte semantics in JavaScript, Python,
+WASM, and workers. A Python deployment must use the JavaScript/Python pair
+emitted from one transient generation IR; independent generation is
+incompatible. Generated source is a versioned compatibility artifact and must
+be imported unchanged; the runtime does not attest manually edited source from
+the supplied fingerprint.
 
 ## FISE 2.0 binary wire
 
@@ -505,11 +521,11 @@ tampering.
 
 ## Limits
 
-Transformed length uses `uint32`. The JavaScript implementation caps a complete
-decoded binary envelope at 512 MiB and rejects advertised lengths before output
-allocation. Base64URL transport adds approximately one third to string size;
-its decoded binary size is checked against the same cap before allocation.
-Runtimes may fail at lower limits because of platform memory policy.
+Transformed length uses `uint32`. The JavaScript and Python implementations cap
+a complete decoded binary envelope at 512 MiB and reject advertised lengths
+before output allocation. Base64URL transport adds approximately one third to
+string size; its decoded binary size is checked against the same cap before
+allocation. Runtimes may fail at lower limits because of platform memory policy.
 
 Range restoration allocates only the requested plaintext range after envelope
 validation and two-byte metadata restoration. Common synchronous `decrypt` and
@@ -529,7 +545,7 @@ payload changes require a new wire major version.
 ## Conformance corpus
 
 [`conformance/v2`](../conformance/README.md) contains one immutable generated
-JavaScript Profile and machine-readable golden vectors. The corpus fixes
+JavaScript/Python Profile pair and machine-readable golden vectors. The corpus fixes
 canonical JSON, UTF-8, binary64 number rendering, logical payload metadata,
 deterministic LZ4 decisions and malformed blocks, compression thresholds,
 Base64URL transport, full and edge binary wires, positional context, TTL,
@@ -542,11 +558,11 @@ and produce envelopes restored by JavaScript. The corpus must not be
 regenerated during install, build, or test. An intentional change to these
 bytes is a protocol change and requires version review.
 
-The current JavaScript fixture freezes the cross-language baseline but does not
-claim another language runtime already conforms. A future multi-language CLI
-must emit every language artifact from the same transient generation IR in one
-operation and verify the pair bidirectionally. Independently regenerating a
-Profile in another language is incompatible even if both files target wire 2.0.
+Package 2.0's JavaScript and Python runners reproduce the corpus in both
+directions. `fise generate <js-path> --backend python` emits both language
+artifacts from the same transient generation IR, verifies their native behavior
+and exact output, then publishes the pair. Independently regenerating a Profile
+in another language is incompatible even if both files target wire 2.0.
 
 See [binary data](./BINARY_DATA.md) for practical full, edge, range,
 progressive, and large-file guidance.

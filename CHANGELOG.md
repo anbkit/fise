@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a dependency-free Python 3.10+ runtime for the complete FISE 2.0 wire:
+  structured/text Base64URL transport, top-level binary bytes, positional
+  context, TTL, strict/raw behavior, deterministic LZ4, full/edge coverage,
+  range restoration, and progressive restoration.
+- Added `fise generate <js-output> --backend python`. One transient typed IR now
+  emits the frontend JavaScript and backend Python Profile artifacts with one
+  fingerprint; native and exact bidirectional wire checks complete before the
+  pair is published. Added single-Python and paired `fise verify` forms.
+- Added a checked-in JavaScript/Python conformance Profile pair, cross-language
+  tests across independently generated profiles and deterministic binary64
+  samples, a build/install smoke for the dependency-free Python wheel, and a
+  runnable Python-agent-backend to JavaScript-frontend example.
+- Deliberately replaced the v2 conformance fixture Profile so its JavaScript and
+  Python artifacts originate from one IR. Its fingerprint and profile-dependent
+  golden envelopes changed; the codec, header, and wire version remain 2.0.
 - Added optional constructor-level `ttlSeconds` for every FISE envelope.
   Core stores one absolute wire expiry, binds it into the existing profile
   consistency path, and throws `ENVELOPE_EXPIRED` at the exact half-open second
@@ -74,8 +89,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced the secondary framed container with direct range and progressive
   restoration from one ordinary FISE envelope. Selected reverse work uses
   logical absolute offsets and skips clear middle bytes in edge mode.
-- Generated stage shifts now sample only distinct positions in the selected
-  context segment, eliminating modulo-equivalent shift parameters.
+- Generated stage shifts now sample only canonical positions in the selected
+  context segment, eliminating values that differ only by a full segment-length
+  rotation.
 - WASM execution traps are distinguished from memory-limit failures, and both
   main-thread and worker paths clear used linear memory on failure as well as
   success.

@@ -9,19 +9,36 @@ npm install fise
 FISE is ESM-only. Runtime operations require Node.js 20+ or a modern browser.
 Secure randomness is consumed by the Node-based generator only.
 
+For a Python backend, also install the dependency-free Python 3.10+ runtime:
+
+```sh
+python -m pip install fise
+```
+
 ## 2. Generate a profile
 
 ```sh
 npx fise generate ./src/fise.profile.ts
 ```
 
+If the backend is Python, emit both language artifacts in this same operation:
+
+```sh
+npx fise generate ./src/fise.profile.ts --backend python
+```
+
+This creates `fise.profile.ts` and the adjacent importable
+`fise_profile.py` from one transient IR, then verifies their shared fingerprint
+and exact wire output before publishing either file.
+
 The command requires `decrypt(encrypt(input))` to restore the original value
 and requires encrypting that restored value to reproduce the same deterministic
 envelope. It checks text, adaptive structured compression, binary full/edge coverage, TTL,
 range/progressive restoration, JavaScript, WASM, workers, and empty values under
-the default context. It publishes one module whose default export is an
-immutable `Profile` instance only after every check passes. Commit the file to
-Git and deploy the same file to every producer and consumer.
+the default context. It publishes the module, or the same-IR language pair,
+only after every check passes. Commit the file—or the complete
+JavaScript/Python pair—to Git and deploy the correct exact artifact to every
+producer and consumer.
 
 Generation refuses to replace an existing path. To intentionally create a new
 profile at that path, opt in explicitly:
@@ -34,6 +51,12 @@ To check a committed profile without changing it:
 
 ```sh
 npx fise verify ./src/fise.profile.ts
+```
+
+For a Python backend, verify the complete pair:
+
+```sh
+npx fise verify ./src/fise.profile.ts ./src/fise_profile.py
 ```
 
 Verification uses random synthetic positional context, checks empty/default
@@ -51,9 +74,10 @@ profile lock, or history database.
 
 ## 3. Share one profile
 
-Frontend and backend must use the exact same generated file. They must also
-agree on the meaning and order of context positions; each encrypt/decrypt pair
-must receive matching operation values.
+Frontend and backend must use the exact same generated artifact for
+JavaScript-only deployments, or the exact same-IR language pair for a Python
+backend. They must also agree on the meaning and order of context positions;
+each encrypt/decrypt pair must receive matching operation values.
 
 For a monorepo, place the profile in one shared package and import it from both
 applications. For separate repositories, choose one profile owner, generate
@@ -86,6 +110,24 @@ const context = [
 const envelope = fise.encrypt({ message: "hello" }, context);
 const restored = fise.decrypt(envelope, context);
 ```
+
+On a Python backend, import the paired generated instance and use the same
+ordered context values:
+
+```python
+from fise import Fise
+from fise_profile import profile
+
+fise = Fise(profile)
+context = ["session_7f4a", "user_42", "tenant_acme", 3, "orders:v1", 18]
+
+envelope = fise.encrypt({"message": "hello"}, context)
+restored = fise.decrypt(envelope, context)
+```
+
+Python structured/text input returns Base64URL `str`; top-level binary input
+returns `bytes`. The frontend uses the paired JavaScript Profile and the same
+context to restore either output.
 
 With the default strict behavior, text and structured input produce a canonical
 unpadded Base64URL string suitable for JSON transport. Top-level binary input

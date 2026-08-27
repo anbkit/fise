@@ -1,9 +1,11 @@
 # Generated profiles
 
-A FISE 2.0 profile is a generated source artifact that applications treat as
-immutable. Importing it creates a frozen `Profile` instance that owns one
-deterministic, length-preserving, reversible byte pipeline and the layout
-calculations needed to read and write its envelopes.
+A FISE 2.0 profile is generated transformation semantics that applications
+treat as immutable. A JavaScript-only deployment represents it with one source
+artifact. A Python-backend deployment represents the same Profile with the
+JavaScript/Python source pair emitted by one command. Importing either artifact
+creates an immutable `Profile` instance with the same deterministic,
+length-preserving, reversible byte pipeline and layout calculations.
 
 ## Lifecycle
 
@@ -12,8 +14,10 @@ npx fise generate path
         ↓
 bidirectional text/adaptive-structured/binary verification
 across full/edge coverage, JavaScript, WASM, and workers
+        ↓ optional --backend python
+same-IR Python artifact and exact cross-language wire verification
         ↓
-generated module exports Profile instance
+generated module or pair exports matching Profile instance(s)
         ↓
 Git versions that source file
         ↓
@@ -24,7 +28,7 @@ There is no separate profile database. Generation is not designed to reproduce
 a prior result: every run uses fresh entropy to sample an independently
 randomized Profile candidate. The CLI refuses an existing destination unless `--override`
 is supplied. If an application needs code for an earlier envelope, it restores
-the earlier generated module from Git.
+the earlier generated module or pair from Git.
 
 ## Generated-module contract
 
@@ -52,6 +56,28 @@ positional context snapshot; offset, marker, forward, and reverse also receive
 the derived context segment and mixed context lanes. Do not hand-edit these
 callbacks, the fingerprint, or the embedded WASM. Run `fise generate` to create
 a new verified compatibility artifact instead.
+
+For a Python backend, the same command emits an adjacent importable module:
+
+```python
+from fise.profile_runtime import Profile
+
+profile = Profile.generated(
+    opaque_fingerprint,
+    context_segment_offset,
+    context_segment_length,
+    context_mixer,
+    offset_calculator,
+    marker_calculator,
+    specialized_forward_kernel,
+    specialized_reverse_kernel,
+)
+```
+
+This is the same private generated ABI expressed in Python. It is not a second
+Profile and must not be generated separately or hand-edited. The Python runtime
+does not need the generated WASM bytes because WASM and workers are frontend
+execution backends, not wire semantics.
 
 ## Generation algorithm
 
@@ -83,20 +109,25 @@ Before emission, the generator:
 6. fuses stages into one forward loop and one reverse loop;
 7. compiles the same semantics into a WASM module;
 8. hashes the semantic IR into a 128-bit opaque fingerprint;
-9. loads the candidate and verifies forward/reverse round trips for text,
+9. when requested, emits Python callbacks from that same in-memory IR;
+10. loads the candidate and verifies forward/reverse round trips for text,
    adaptive structured compression, binary full/edge coverage, constructor TTL,
    range/progressive restoration, JavaScript, WASM, and workers with random
    synthetic context, plus empty values with the default context;
-10. atomically publishes the module only after all checks pass.
+11. for a Python pair, verifies native Python behavior, hundreds of deterministic
+    binary64 values, the shared fingerprint, and exact JavaScript/Python envelopes;
+12. atomically publishes the module or complete pair only after all checks pass.
 
 Run `npx fise verify <profile-file>` to repeat the same read-only verification
-for a committed file. It verifies restoration and deterministic re-encryption.
+for a committed JavaScript or Python file. Use `npx fise verify <js-file>
+<python-file>` to verify a deployed language pair. Verification proves
+restoration and deterministic re-encryption.
 For cross-backend checks, JavaScript-produced envelopes are restored by
 WASM/workers, and WASM/worker-produced envelopes are restored by JavaScript.
 Profile modules are executable code; verify only trusted generated files.
 
 The IR and randomness are not saved. Constants and functions present in the
-generated file are the profile itself, not a regeneration record.
+generated file or pair are the Profile itself, not a regeneration record.
 
 Generated modules contain only the runtime import and executable Profile
 export. Lifecycle guidance stays in CLI output and documentation instead of
@@ -104,14 +135,17 @@ being embedded as banner comments in application bundles.
 
 ## Deployment ownership
 
-Choose one canonical owner for every generated profile. Every producer and
-consumer of an envelope must deploy that exact generated file and use the same
-positional context contract.
+Choose one canonical owner for every generated Profile. Every producer and
+consumer of an envelope must deploy the exact generated artifact for its
+language and use the same positional context contract.
 
-- In a monorepo, keep one profile in a shared package and import it from the
-  frontend and backend.
+- In a JavaScript monorepo, keep one profile in a shared package and import it
+  from the frontend and backend.
+- With a Python backend, run `fise generate <js-path> --backend python` once,
+  then place the JavaScript artifact with the frontend and its paired Python
+  artifact with the backend.
 - With separate repositories, generate once in the owner repository and
-  distribute the exact file by copy, CI artifact, or internal package.
+  distribute the exact file or pair by copy, CI artifact, or internal package.
 - Never generate independently on each side; separate randomized runs must be
   treated as incompatible rather than assumed to recreate the same artifact.
 
@@ -137,7 +171,7 @@ Applications may generate as many files as needed:
 
 ```sh
 npx fise generate ./src/api.profile.ts
-npx fise generate ./src/media.profile.ts
+npx fise generate ./src/media.profile.ts --backend python
 ```
 
 ```ts

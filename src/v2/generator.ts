@@ -7,8 +7,9 @@ import {
 	rmSync,
 	writeFileSync
 } from "node:fs";
-import { dirname } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 import { FiseError } from "../errors.js";
+import { verifyGeneratedProfilePairSources } from "./pythonVerifier.js";
 import { compileProfileWasm } from "./wasmCodegen.js";
 import {
 	resolveProfilePath,
@@ -46,9 +47,22 @@ export interface GeneratedProfileSource {
 	readonly source: string;
 }
 
+export interface GeneratedProfilePairSources {
+	readonly fingerprint: string;
+	readonly javascriptSource: string;
+	readonly pythonSource: string;
+}
+
 export interface WrittenProfile {
 	readonly fingerprint: string;
 	readonly path: string;
+	readonly verification: ProfileVerification;
+}
+
+export interface WrittenProfilePair {
+	readonly fingerprint: string;
+	readonly javascriptPath: string;
+	readonly pythonPath: string;
 	readonly verification: ProfileVerification;
 }
 
@@ -84,11 +98,27 @@ export interface ProfileWriterOptions extends ProfileGeneratorOptions {
 	readonly verifySource?: (source: string) => Promise<ProfileVerification>;
 }
 
+/** @internal Paired-writer verification seam; not exported by the package. */
+export interface ProfilePairWriterOptions extends ProfileWriterOptions {
+	readonly verifyPairSources?: (
+		javascriptSource: string,
+		pythonSource: string
+	) => Promise<ProfileVerification>;
+}
+
 const secureEntropy: ProfileGeneratorEntropy = Object.freeze({
 	integer: (_label: string, minimumInclusive: number, maximumExclusive: number) =>
 		randomInt(minimumInclusive, maximumExclusive),
 	bytes: (_label: string, length: number) => nodeRandomBytes(length)
 });
+
+const PYTHON_KEYWORDS = new Set([
+	"False", "None", "True", "and", "as", "assert", "async", "await",
+	"break", "class", "continue", "def", "del", "elif", "else", "except",
+	"finally", "for", "from", "global", "if", "import", "in", "is", "lambda",
+	"nonlocal", "not", "or", "pass", "raise", "return", "try", "while",
+	"with", "yield"
+]);
 
 const nodeFileSystem: ProfileGeneratorFileSystem = Object.freeze({
 	exists: (path: string) => existsSync(path),
@@ -105,6 +135,16 @@ const nodeFileSystem: ProfileGeneratorFileSystem = Object.freeze({
 export function generateProfileSource(
 	options: ProfileGeneratorOptions = {}
 ): GeneratedProfileSource {
+	const generated = generateProfilePairSources(options);
+	return Object.freeze({
+		fingerprint: generated.fingerprint,
+		source: generated.javascriptSource
+	});
+}
+
+export function generateProfilePairSources(
+	options: ProfileGeneratorOptions = {}
+): GeneratedProfilePairSources {
 	const entropy = options.entropy ?? secureEntropy;
 	if (
 		options.acceptCandidate !== undefined &&
@@ -122,7 +162,11 @@ export function generateProfileSource(
 			.update(canonical)
 			.digest("hex")
 			.slice(0, 32);
-		return Object.freeze({ fingerprint, source: emitProfile(ir, fingerprint) });
+		return Object.freeze({
+			fingerprint,
+			javascriptSource: emitProfile(ir, fingerprint),
+			pythonSource: emitPythonProfile(ir, fingerprint)
+		});
 	}
 	throw new FiseError(
 		"INVALID_PROFILE",
@@ -225,6 +269,214 @@ export async function writeGeneratedProfile(
 		path: absolutePath,
 		verification: ownedVerification
 	});
+}
+
+export async function writeGeneratedProfilePair(
+	outputPath: string,
+	options: ProfilePairWriterOptions = {}
+): Promise<WrittenProfilePair> {
+	const javascriptPath = resolveProfilePath(outputPath, "JavaScript output path");
+	const pythonPath = pairedPythonPath(javascriptPath);
+	if (options.override !== undefined && typeof options.override !== "boolean") {
+		throw new FiseError("INVALID_INPUT", "FISE CLI: override must be a boolean.");
+	}
+	const entropy = options.entropy ?? secureEntropy;
+	const fileSystem = options.fileSystem ?? nodeFileSystem;
+	const verifySource = options.verifySource ?? verifyProfileSource;
+	const verifyPairSources = options.verifyPairSources ?? verifyGeneratedProfilePairSources;
+	if (typeof verifySource !== "function" || typeof verifyPairSources !== "function") {
+		throw new FiseError("INVALID_INPUT", "FISE CLI: paired profile verifier must be a function.");
+	}
+	if (!options.override) {
+		if (fileSystem.exists(javascriptPath)) throw profileExists(javascriptPath);
+		if (fileSystem.exists(pythonPath)) throw profileExists(pythonPath);
+	}
+	const generated = generateProfilePairSources({
+		entropy,
+		...(options.acceptCandidate === undefined
+			? {}
+			: { acceptCandidate: options.acceptCandidate })
+	});
+	let javascriptVerification: ProfileVerification;
+	let pairVerification: ProfileVerification;
+	try {
+		[javascriptVerification, pairVerification] = await Promise.all([
+			verifySource(generated.javascriptSource),
+			verifyPairSources(generated.javascriptSource, generated.pythonSource)
+		]);
+	} catch (error) {
+		if (error instanceof FiseError) throw error;
+		throw new FiseError(
+			"INVALID_PROFILE",
+			"FISE CLI: generated JavaScript/Python pair verification failed.",
+			error
+		);
+	}
+	assertVerification(javascriptVerification, generated.fingerprint);
+	assertVerification(pairVerification, generated.fingerprint);
+	const verification: ProfileVerification = Object.freeze({
+		fingerprint: generated.fingerprint,
+		checks: Object.freeze([
+			...javascriptVerification.checks,
+			...pairVerification.checks
+		])
+	});
+	publishGeneratedPair(
+		javascriptPath,
+		generated.javascriptSource,
+		pythonPath,
+		generated.pythonSource,
+		Boolean(options.override),
+		entropy,
+		fileSystem
+	);
+	return Object.freeze({
+		fingerprint: generated.fingerprint,
+		javascriptPath,
+		pythonPath,
+		verification
+	});
+}
+
+export function pairedPythonPath(javascriptPath: string): string {
+	const extension = extname(javascriptPath);
+	let moduleName = basename(javascriptPath, extension).replace(/[^A-Za-z0-9_]/g, "_");
+	if (!/^[A-Za-z_]/.test(moduleName) || PYTHON_KEYWORDS.has(moduleName)) {
+		moduleName = `_${moduleName}`;
+	}
+	return join(dirname(javascriptPath), `${moduleName}.py`);
+}
+
+function publishGeneratedPair(
+	javascriptPath: string,
+	javascriptSource: string,
+	pythonPath: string,
+	pythonSource: string,
+	override: boolean,
+	entropy: ProfileGeneratorEntropy,
+	fileSystem: ProfileGeneratorFileSystem
+): void {
+	const suffix = bytesToHex(entropyBytes(entropy, "temporaryPath", 8));
+	const files = [
+		{
+			path: javascriptPath,
+			source: javascriptSource,
+			temporaryPath: `${javascriptPath}.${process.pid}.${suffix}.tmp`,
+			backupPath: `${javascriptPath}.${process.pid}.${suffix}.bak`,
+			existed: fileSystem.exists(javascriptPath),
+			temporaryWritten: false,
+			backupCreated: false,
+			published: false
+		},
+		{
+			path: pythonPath,
+			source: pythonSource,
+			temporaryPath: `${pythonPath}.${process.pid}.${suffix}.tmp`,
+			backupPath: `${pythonPath}.${process.pid}.${suffix}.bak`,
+			existed: fileSystem.exists(pythonPath),
+			temporaryWritten: false,
+			backupCreated: false,
+			published: false
+		}
+	];
+	try {
+		for (const file of files) fileSystem.createDirectory(dirname(file.path));
+		for (const file of files) {
+			fileSystem.writeExclusive(file.temporaryPath, file.source);
+			file.temporaryWritten = true;
+		}
+		if (override) {
+			for (const file of files) {
+				if (!file.existed) continue;
+				fileSystem.publishExclusive(file.path, file.backupPath);
+				file.backupCreated = true;
+			}
+			for (const file of files) {
+				fileSystem.replace(file.temporaryPath, file.path);
+				file.temporaryWritten = false;
+				file.published = true;
+			}
+		} else {
+			for (const file of files) {
+				fileSystem.publishExclusive(file.temporaryPath, file.path);
+				file.published = true;
+			}
+		}
+		for (const file of files) {
+			if (file.temporaryWritten) {
+				try {
+					fileSystem.remove(file.temporaryPath);
+				} catch {
+					// The complete pair is published; temporary cleanup is best effort.
+				}
+				file.temporaryWritten = false;
+			}
+			if (file.backupCreated) {
+				try {
+					fileSystem.remove(file.backupPath);
+				} catch {
+					// The complete pair is published; backup cleanup is best effort.
+				}
+				file.backupCreated = false;
+			}
+		}
+	} catch (error) {
+		for (const file of [...files].reverse()) {
+			try {
+				if (override && file.backupCreated) {
+					if (file.published) {
+						fileSystem.replace(file.backupPath, file.path);
+					}
+					fileSystem.remove(file.backupPath);
+					file.backupCreated = false;
+				} else if (file.published && !file.existed) {
+					fileSystem.remove(file.path);
+				}
+			} catch {
+				// Preserve the original publication failure.
+			}
+			try {
+				if (file.temporaryWritten) fileSystem.remove(file.temporaryPath);
+			} catch {
+				// Preserve the original publication failure.
+			}
+			try {
+				if (file.backupCreated) fileSystem.remove(file.backupPath);
+			} catch {
+				// Preserve the original publication failure.
+			}
+		}
+		if (!override && errorCode(error) === "EEXIST") {
+			throw new FiseError(
+				"INVALID_INPUT",
+				"FISE CLI: a generated pair destination already exists; use --override to replace the pair.",
+				error
+			);
+		}
+		throw new FiseError(
+			"INVALID_INPUT",
+			"FISE CLI: unable to publish the generated JavaScript/Python profile pair.",
+			error
+		);
+	}
+}
+
+function assertVerification(
+	verification: ProfileVerification,
+	expectedFingerprint: string
+): void {
+	if (
+		!verification ||
+		verification.fingerprint !== expectedFingerprint ||
+		!Array.isArray(verification.checks) ||
+		verification.checks.length === 0 ||
+		verification.checks.some(check => typeof check !== "string" || check.length === 0)
+	) {
+		throw new FiseError(
+			"INVALID_PROFILE",
+			"FISE CLI: generated profile verification returned an invalid result."
+		);
+	}
 }
 
 function profileExists(path: string): FiseError {
@@ -491,6 +743,97 @@ function emitProfile(ir: ProfileIr, fingerprint: string): string {
 		`  ${reverse},\n` +
 		`  Uint8Array.of(${Array.from(wasm).join(",")})\n` +
 		`);\n`;
+}
+
+function emitPythonProfile(ir: ProfileIr, fingerprint: string): string {
+	const [i0, i1, i2, i3] = ir.contextInitial;
+	const [cm0, cm1, cm2] = ir.contextMultipliers;
+	const [o0, o1, o2, o3] = ir.offsetConstants;
+	const [k0, k1, k2, k3] = ir.markerConstants;
+	return `from fise.profile_runtime import Profile\n\n` +
+		`_U=4294967295\n\n` +
+		`def _m(b,q):\n` +
+		` a,c,d,e=${i0},${i1},${i2},${i3}\n` +
+		` for i,x in enumerate(b):\n` +
+		`  a=((a^(x+i))*${cm0})&_U\n` +
+		`  c=((c+x+(a>>16))*${cm1})&_U\n` +
+		`  y=(d^x^c)&_U\n` +
+		`  d=((y<<${ir.contextRotation})|(y>>${32 - ir.contextRotation}))&_U\n` +
+		`  e=((e+d+i)*${cm2})&_U\n` +
+		` return a,c,d,e\n\n` +
+		emitPythonLayoutFunction("_o", o0, o1, o2, o3, true) +
+		emitPythonLayoutFunction("_k", k0, k1, k2, k3, false) +
+		emitPythonKernel("_f", ir.stages, false) +
+		emitPythonKernel("_r", [...ir.stages].reverse(), true) +
+		`profile=Profile.generated("${fingerprint}",${ir.contextSegmentOffset},${ir.contextSegmentLength},_m,_o,_k,_f,_r)\n` +
+		`__all__=("profile",)\n`;
+}
+
+function emitPythonLayoutFunction(
+	name: string,
+	a: number,
+	b: number,
+	c: number,
+	d: number,
+	offset: boolean
+): string {
+	const fold = offset
+		? ` f=${a}\n for n,v in enumerate(s):f=((f^v^n)*0x45d9f3b)&_U\n`
+		: "";
+	const seed = offset
+		? `((i.transformed_length^${a})+(i.operation_binding_length*${b})+(c[0]^${c})+(c[2]*${d})+f)&_U`
+		: `((i.transformed_length^${a})+(i.operation_binding_length*${b})+(c[1]^${c})+(c[3]*${d})+len(s))&_U`;
+	const segmentMix = offset
+		? ""
+		: ` for n,v in enumerate(s):x=((x^v^n)*0x1000193)&_U\n`;
+	const result = offset ? `(x^(x>>16))%(i.transformed_length+1)` : `(x^(x>>16))&_U`;
+	return `def ${name}(i,c,s,q):\n` + fold +
+		` x=${seed}\n` +
+		segmentMix +
+		` x^=x>>16\n` +
+		` x=(x*0x7feb352d)&_U\n` +
+		` x^=x>>15\n` +
+		` x=(x*0x846ca68b)&_U\n` +
+		` return ${result}\n\n`;
+}
+
+function emitPythonKernel(
+	name: string,
+	stages: readonly Stage[],
+	reverse: boolean
+): string {
+	const lines = [
+		`def ${name}(b,s,c,z,q):`,
+		` o=bytearray(len(b))`,
+		` for i,v in enumerate(b):`,
+		`  p=(z+i)&_U`,
+		`  x=v`
+	];
+	for (let index = 0; index < stages.length; index++) {
+		const stage = stages[index];
+		lines.push(
+			`  w=((p^c[${stage.contextLane}])*${stage.positionMultiplier}+c[${stage.contextLane2}]+${stage.constant})&_U`,
+			`  k=(s[(p+${stage.segmentShift})%len(s)]^w^(w>>8)^(w>>16)^(w>>24))&255`
+		);
+		if (stage.kind === "xor") lines.push(`  x^=k`);
+		else if (stage.kind === "add") lines.push(reverse ? `  x=(x-k)&255` : `  x=(x+k)&255`);
+		else if (stage.kind === "rotate") {
+			lines.push(
+				`  r=(k&7)+1`,
+				reverse
+					? `  x=((x>>r)|(x<<(8-r)))&255`
+					: `  x=((x<<r)|(x>>(8-r)))&255`
+			);
+		} else {
+			lines.push(
+				reverse
+					? `  x=((x-k)*${stage.inverse})&255`
+					: `  x=(x*${stage.multiplier}+k)&255`
+			);
+		}
+	}
+	lines.push(`  o[i]=x`, ` return bytes(o)`, "");
+	return `${lines.join("\n")}\n`;
 }
 
 function emitKernel(stages: readonly Stage[], reverse: boolean): string {

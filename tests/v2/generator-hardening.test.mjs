@@ -168,7 +168,7 @@ test("every generated numeric parameter affects source identity", () => {
 	}
 });
 
-test("generated segment shifts use distinct context lanes and change kernel semantics", async () => {
+test("generated segment shifts use canonical segment positions and change kernel semantics", async () => {
 	const temporaryDirectory = mkdtempSync(join(testDirectory, ".generator-segment-shift-"));
 	const trace = new Map();
 	const fixed = new Map([["integer:extraStageCount", 3]]);

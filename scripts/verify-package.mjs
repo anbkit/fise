@@ -26,8 +26,14 @@ assert.deepEqual(packageJson.files, [
 	"dist",
 	"conformance/README.md",
 	"conformance/v2/*",
+	"python/pyproject.toml",
+	"python/README.md",
+	"python/LICENSE",
+	"python/src/fise/*.py",
+	"python/src/fise/py.typed",
 	"docs/*.md",
 	"examples/*.mjs",
+	"examples/*.py",
 	"examples/README.md",
 	"CHANGELOG.md",
 	"CONTRIBUTING.md"
@@ -43,6 +49,7 @@ for (const path of [
 	"../dist/v2/profile.js",
 	"../dist/v2/generator.js",
 	"../dist/v2/verifier.js",
+	"../dist/v2/pythonVerifier.js",
 	"../dist/v2/wasm.js",
 	"../dist/v2/parallel.js",
 	"../dist/v2/base64Url.js",
@@ -53,7 +60,19 @@ for (const path of [
 	"../dist/v2/workers/profileWorker.js",
 	"../conformance/README.md",
 	"../conformance/v2/profile.generated.mjs",
+	"../conformance/v2/profile_generated.py",
 	"../conformance/v2/vectors.json",
+	"../python/pyproject.toml",
+	"../python/README.md",
+	"../python/LICENSE",
+	"../python/src/fise/__init__.py",
+	"../python/src/fise/core.py",
+	"../python/src/fise/errors.py",
+	"../python/src/fise/profile_runtime.py",
+	"../python/src/fise/_codec.py",
+	"../python/src/fise/_lz4.py",
+	"../python/src/fise/_verify.py",
+	"../python/src/fise/py.typed",
 	"../examples/README.md",
 	"../examples/fise.profile.mjs",
 	"../examples/basic.mjs",
@@ -86,6 +105,10 @@ const conformanceProfileSource = readFileSync(
 	new URL("../conformance/v2/profile.generated.mjs", import.meta.url),
 	"utf8"
 );
+const conformancePythonProfileSource = readFileSync(
+	new URL("../conformance/v2/profile_generated.py", import.meta.url),
+	"utf8"
+);
 assert.equal(conformanceVectors.format, "fise-v2-conformance");
 assert.deepEqual(conformanceVectors.wireVersion, { major: 2, minor: 0 });
 for (const section of [
@@ -113,6 +136,11 @@ assert.match(
 	new RegExp(`Profile\\.generated\\(\\n  "${conformanceVectors.profileFingerprint}"`)
 );
 assert.doesNotMatch(conformanceProfileSource, /\/\/|\/\*/);
+assert.match(
+	conformancePythonProfileSource,
+	new RegExp(`Profile\\.generated\\("${conformanceVectors.profileFingerprint}"`)
+);
+assert.doesNotMatch(conformancePythonProfileSource, /#/);
 assert.notEqual(
 	statSync(new URL("../dist/cli.js", import.meta.url)).mode & 0o111,
 	0,
@@ -153,6 +181,9 @@ assert.deepEqual(
 		"binary-restoration.mjs",
 		"failure-boundaries.mjs",
 		"fise.profile.mjs",
+		"fise_profile.py",
+		"python-agent-backend.py",
+		"python-agent-interop.mjs",
 		"raw-fallback.mjs",
 		"run-all.mjs",
 		"ttl.mjs",
