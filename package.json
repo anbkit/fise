@@ -42,7 +42,7 @@
 		"test:python": "node scripts/run-python-tests.mjs",
 		"verify:types": "tsc --noEmit --strict --target ES2020 --module ESNext --moduleResolution bundler --lib ES2020,DOM --types node --skipLibCheck tests/v2/public-api.ts",
 		"verify:docs": "node scripts/verify-docs.mjs",
-		"verify:benchmarks": "npm run build && tsc --noEmit --strict --target ES2020 --module ESNext --moduleResolution bundler --lib ES2020,DOM --types node --skipLibCheck benchmarks/*.ts",
+		"verify:benchmarks": "npm run build && tsc -p tsconfig.benchmarks.json",
 		"verify:examples": "npm run build && node examples/run-all.mjs",
 		"verify:package": "npm run build && npm run verify:docs && npm run verify:types && node scripts/verify-package.mjs && node scripts/verify-python-package.mjs",
 		"verify:packed": "npm run build && node scripts/verify-packed-package.mjs",
