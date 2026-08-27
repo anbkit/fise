@@ -133,7 +133,7 @@ for (const section of [
 }
 assert.match(
 	conformanceProfileSource,
-	new RegExp(`Profile\\.generated\\(\\n  "${conformanceVectors.profileFingerprint}"`)
+	new RegExp(`Profile\\.generated\\(\\r?\\n  "${conformanceVectors.profileFingerprint}"`)
 );
 assert.doesNotMatch(conformanceProfileSource, /\/\/|\/\*/);
 assert.match(
