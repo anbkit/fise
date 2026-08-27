@@ -17,9 +17,11 @@ import { fileURLToPath } from "node:url";
 
 import { build } from "esbuild";
 
+import { resolveNpmCli } from "./npm-cli.mjs";
+
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = mkdtempSync(join(tmpdir(), "fise-packed-package-"));
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+const npmCli = resolveNpmCli();
 const packageJson = JSON.parse(readFileSync(join(repositoryRoot, "package.json"), "utf8"));
 const suppliedTarball = parseSuppliedTarball(process.argv.slice(2));
 
@@ -44,6 +46,10 @@ function run(command, args, options = {}) {
 	return result.stdout;
 }
 
+function runNpm(args, options = {}) {
+	return run(npmCli.executable, [...npmCli.prefix, ...args], options);
+}
+
 try {
 	let metadata;
 	let tarballPath;
@@ -58,7 +64,7 @@ try {
 			size: statSync(tarballPath).size
 		};
 	} else {
-		const packOutput = run(npmCommand, [
+		const packOutput = runNpm([
 			"pack",
 			"--json",
 			"--pack-destination",
@@ -80,8 +86,7 @@ try {
 		join(consumerRoot, "package.json"),
 		`${JSON.stringify({ name: "fise-packed-consumer", private: true, type: "module" }, null, 2)}\n`
 	);
-	run(
-		npmCommand,
+	runNpm(
 		["install", "--ignore-scripts", "--no-audit", "--no-fund", tarballPath],
 		{ cwd: consumerRoot }
 	);
@@ -93,7 +98,7 @@ try {
 	);
 	assert.equal(installedPackageJson.name, packageJson.name);
 	assert.equal(installedPackageJson.version, packageJson.version);
-	const binHelpOutput = run(npmCommand, ["exec", "--", "fise", "help"], {
+	const binHelpOutput = runNpm(["exec", "--", "fise", "help"], {
 		cwd: consumerRoot
 	});
 	assert.match(binHelpOutput, /FISE 2\.0 CLI/);

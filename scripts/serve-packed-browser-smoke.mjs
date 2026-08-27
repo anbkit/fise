@@ -19,9 +19,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { build as buildVite } from "vite";
 
+import { resolveNpmCli } from "./npm-cli.mjs";
+
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryRoot = mkdtempSync(join(tmpdir(), "fise-packed-browser-"));
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+const npmCli = resolveNpmCli();
 const packageJson = JSON.parse(readFileSync(join(repositoryRoot, "package.json"), "utf8"));
 const suppliedTarball = parseSuppliedTarball(process.argv.slice(2));
 
@@ -44,6 +46,10 @@ function run(command, args, cwd = repositoryRoot) {
 	return result.stdout;
 }
 
+function runNpm(args, cwd = repositoryRoot) {
+	return run(npmCli.executable, [...npmCli.prefix, ...args], cwd);
+}
+
 let packMetadata;
 let tarballPath;
 if (suppliedTarball) {
@@ -55,7 +61,7 @@ if (suppliedTarball) {
 		size: statSync(tarballPath).size
 	};
 } else {
-	[packMetadata] = JSON.parse(run(npmCommand, [
+	[packMetadata] = JSON.parse(runNpm([
 		"pack",
 		"--json",
 		"--pack-destination",
@@ -69,8 +75,7 @@ writeFileSync(
 	join(consumerRoot, "package.json"),
 	`${JSON.stringify({ name: "fise-packed-browser", private: true, type: "module" }, null, 2)}\n`
 );
-run(
-	npmCommand,
+runNpm(
 	["install", "--ignore-scripts", "--no-audit", "--no-fund", tarballPath],
 	consumerRoot
 );
