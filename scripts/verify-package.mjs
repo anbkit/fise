@@ -109,6 +109,8 @@ const conformancePythonProfileSource = readFileSync(
 	new URL("../conformance/v2/profile_generated.py", import.meta.url),
 	"utf8"
 );
+const cliUrl = new URL("../dist/cli.js", import.meta.url);
+const cliSource = readFileSync(cliUrl, "utf8");
 assert.equal(conformanceVectors.format, "fise-v2-conformance");
 assert.deepEqual(conformanceVectors.wireVersion, { major: 2, minor: 0 });
 for (const section of [
@@ -141,11 +143,10 @@ assert.match(
 	new RegExp(`Profile\\.generated\\("${conformanceVectors.profileFingerprint}"`)
 );
 assert.doesNotMatch(conformancePythonProfileSource, /#/);
-assert.notEqual(
-	statSync(new URL("../dist/cli.js", import.meta.url)).mode & 0o111,
-	0,
-	"dist/cli.js must be executable"
-);
+assert.match(cliSource, /^#!\/usr\/bin\/env node(?:\r?\n|$)/, "dist/cli.js must have a Node shebang");
+if (process.platform !== "win32") {
+	assert.notEqual(statSync(cliUrl).mode & 0o111, 0, "dist/cli.js must be executable");
+}
 
 const api = await import("fise");
 assert.deepEqual(Object.keys(api).sort(), [
