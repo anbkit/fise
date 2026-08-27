@@ -60,7 +60,8 @@ for (const filename of [
 	"release-evidence.json",
 	"SHA256SUMS",
 	"npm-pack-metadata.json",
-	"framed-benchmark.json",
+	"structured-transport-benchmark.json",
+	"binary-restoration-benchmark.json",
 	"worker-benchmark.json",
 	`${packageJson.name}-${packageJson.version}.tgz`
 ]) {
@@ -79,18 +80,33 @@ try {
 	runGate("benchmark-types", npm, ["run", "verify:benchmarks"]);
 
 	if (!values["skip-benchmarks"]) {
-		const framedOutput = resolve(outputDirectory, "framed-benchmark.json");
-		const framed = runGate("framed-benchmark", npm, [
+		const structuredOutput = resolve(outputDirectory, "structured-transport-benchmark.json");
+		const structured = runGate("structured-transport-benchmark", npm, [
 			"run",
-			"benchmark:framed",
+			"benchmark:structured",
 			"--",
 			"--output",
-			framedOutput
+			structuredOutput
 		]);
-		const framedJson = readJson(framedOutput);
-		framed.record.counts = {
-			frameSizeSuites: framedJson.suites.length,
-			rangeCases: framedJson.suites.reduce(
+		const structuredJson = readJson(structuredOutput);
+		structured.record.counts = {
+			payloadSuites: structuredJson.suites.length,
+			transportRepresentations: 6
+		};
+
+		const binaryOutput = resolve(outputDirectory, "binary-restoration-benchmark.json");
+		const binary = runGate("binary-restoration-benchmark", npm, [
+			"run",
+			"benchmark:binary",
+			"--",
+			"--output",
+			binaryOutput
+		]);
+		const binaryJson = readJson(binaryOutput);
+		binary.record.counts = {
+			coverageModes: 2,
+			chunkSizeSuites: binaryJson.suites.length,
+			rangeCases: binaryJson.suites.reduce(
 				(total, suite) => total + suite.rangeRestoration.length,
 				0
 			)
@@ -110,7 +126,11 @@ try {
 			payloadSizes: workerJson.localJavaScript.operations.length
 		};
 	} else {
-		for (const name of ["framed-benchmark", "worker-benchmark"]) {
+		for (const name of [
+			"structured-transport-benchmark",
+			"binary-restoration-benchmark",
+			"worker-benchmark"
+		]) {
 			commandResults.push({
 				name,
 				command: null,
@@ -175,7 +195,7 @@ try {
 
 const unverifiedBoundaries = [
 	...(values["skip-benchmarks"]
-		? ["framed and worker benchmarks were explicitly skipped"]
+		? ["structured transport, binary restoration, and worker benchmarks were explicitly skipped"]
 		: []),
 	"GitHub repository metadata is external to the release artifact"
 ];
@@ -243,7 +263,7 @@ function parseCounts(output) {
 	assignMatch(counts, "failed", output, /# fail (\d+)/);
 	assignMatch(counts, "runnableExamples", output, /Verified (\d+) runnable FISE examples/);
 	assignMatch(counts, "markdownDocuments", output, /Verified local Markdown links in (\d+) FISE documents/);
-	assignMatch(counts, "browserFISFFrames", output, /Packed Chromium PASS:.*? (\d+) FISF frames/);
+	assignMatch(counts, "browserLazyChunks", output, /Packed Chromium PASS:.*? (\d+) lazy chunks/);
 	return Object.keys(counts).length === 0 ? null : counts;
 }
 

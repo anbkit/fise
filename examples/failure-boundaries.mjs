@@ -27,7 +27,8 @@ assert.throws(
 	hasCode("INVALID_CONTEXT")
 );
 
-const unsupportedVersion = envelope.slice();
+const binaryEnvelope = fise.encrypt(Uint8Array.of(1, 2, 3), context);
+const unsupportedVersion = binaryEnvelope.slice();
 unsupportedVersion[4] = 1;
 assert.throws(
 	() => fise.decrypt(unsupportedVersion, context),

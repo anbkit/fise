@@ -9,6 +9,7 @@ import {
 	type ProfileRuntime
 } from "./profile.js";
 import type { FiseContext } from "./types.js";
+import { snapshotOwnDataProperties } from "./options.js";
 
 const DEFAULT_MINIMUM_PARALLEL_BYTES = 256 * 1024;
 const MAX_WORKERS = 32;
@@ -188,9 +189,25 @@ async function runParallel(
 }
 
 async function createAdapter(index: number): Promise<WorkerAdapter> {
-	const workerUrl = new URL("./workers/profileWorker.js", import.meta.url);
+	if (typeof globalThis.Worker === "function" && !isNodeRuntime()) {
+		const worker = new Worker(
+			new URL("./workers/profileWorker.js", import.meta.url),
+			{ type: "module", name: `fise-profile-${index + 1}` }
+		);
+		return adapterFor(
+			(message, transfer) => worker.postMessage(message, transfer),
+			listener => worker.addEventListener("message", event => listener(event.data as WorkerMessage)),
+			listener => {
+				worker.addEventListener("error", event => listener(event.error ?? new Error(event.message)));
+				worker.addEventListener("messageerror", () => listener(new Error("worker message error")));
+			},
+			async () => void worker.terminate()
+		);
+	}
 	if (isNodeRuntime()) {
-		const { Worker } = await import("node:worker_threads");
+		const nodeWorkerThreads = "node:" + "worker_threads";
+		const { Worker } = await import(nodeWorkerThreads) as typeof import("node:worker_threads");
+		const workerUrl = new URL("./workers/profileWorker.js", import.meta.url);
 		const worker = new Worker(workerUrl, {
 			name: `fise-profile-${index + 1}`,
 			execArgv: process.execArgv.filter(argument => !argument.startsWith("--input-type"))
@@ -206,18 +223,6 @@ async function createAdapter(index: number): Promise<WorkerAdapter> {
 				});
 			},
 			async () => void await worker.terminate()
-		);
-	}
-	if (typeof globalThis.Worker === "function") {
-		const worker = new Worker(workerUrl, { type: "module", name: `fise-profile-${index + 1}` });
-		return adapterFor(
-			(message, transfer) => worker.postMessage(message, transfer),
-			listener => worker.addEventListener("message", event => listener(event.data as WorkerMessage)),
-			listener => {
-				worker.addEventListener("error", event => listener(event.error ?? new Error(event.message)));
-				worker.addEventListener("messageerror", () => listener(new Error("worker message error")));
-			},
-			async () => void worker.terminate()
 		);
 	}
 	throw new FiseError("PARALLEL_UNAVAILABLE", "FISE: no worker constructor is available.");
@@ -326,23 +331,14 @@ export function adapterFor(
 }
 
 function normalizeOptions(options: ParallelOptions): Required<ParallelOptions> {
-	if (!options || typeof options !== "object" || Array.isArray(options)) {
-		throw new FiseError("INVALID_INPUT", "FISE: parallel options must be an object.");
-	}
-	for (const key of Reflect.ownKeys(options)) {
-		if (
-			typeof key === "symbol" ||
-			(key !== "workerCount" && key !== "minimumParallelBytes")
-		) {
-			throw new FiseError("INVALID_INPUT", "FISE: parallel options contain an unknown field.");
-		}
-		const descriptor = Object.getOwnPropertyDescriptor(options, key);
-		if (!descriptor || !("value" in descriptor)) {
-			throw new FiseError("INVALID_INPUT", "FISE: parallel options must not contain accessors.");
-		}
-	}
-	const workerCount = ownValue(options, "workerCount") ?? defaultWorkerCount();
-	const minimumParallelBytes = ownValue(options, "minimumParallelBytes") ?? DEFAULT_MINIMUM_PARALLEL_BYTES;
+	const properties = snapshotOwnDataProperties(
+		options,
+		["workerCount", "minimumParallelBytes"],
+		"INVALID_INPUT",
+		"parallel options"
+	);
+	const workerCount = properties.get("workerCount") ?? defaultWorkerCount();
+	const minimumParallelBytes = properties.get("minimumParallelBytes") ?? DEFAULT_MINIMUM_PARALLEL_BYTES;
 	if (
 		typeof workerCount !== "number" ||
 		!Number.isInteger(workerCount) ||
@@ -359,11 +355,6 @@ function normalizeOptions(options: ParallelOptions): Required<ParallelOptions> {
 		throw new FiseError("INVALID_INPUT", "FISE: minimumParallelBytes must be non-negative.");
 	}
 	return Object.freeze({ workerCount, minimumParallelBytes });
-}
-
-function ownValue(object: object, key: string): unknown {
-	const descriptor = Object.getOwnPropertyDescriptor(object, key);
-	return descriptor && "value" in descriptor ? descriptor.value : undefined;
 }
 
 function defaultWorkerCount(): number {

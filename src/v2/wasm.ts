@@ -5,6 +5,7 @@ import {
 	type Profile,
 	type ProfileKernelRunner
 } from "./profile.js";
+import { withClearedWasmMemory } from "./wasmMemory.js";
 
 const PAGE_BYTES = 65_536;
 const MAX_MEMORY_PAGES = 8192;
@@ -65,27 +66,26 @@ export async function createWasmKernelRunner(profile: Profile): Promise<ProfileK
 		const requiredBytes = input.length + contextSegment.length;
 		try {
 			ensureMemory(exports.memory, requiredBytes);
-			const memory = new Uint8Array(exports.memory.buffer);
-			memory.set(input, 0);
-			memory.set(contextSegment, input.length);
-			exports[operation](
-				0,
-				input.length,
-				input.length,
-				contextSegment.length,
-				contextState[0],
-				contextState[1],
-				contextState[2],
-				contextState[3],
-				absoluteOffset
-			);
-			return memory.slice(0, input.length);
+			return withClearedWasmMemory(exports.memory, requiredBytes, memory => {
+				memory.set(input, 0);
+				memory.set(contextSegment, input.length);
+				exports[operation](
+					0,
+					input.length,
+					input.length,
+					contextSegment.length,
+					contextState[0],
+					contextState[1],
+					contextState[2],
+					contextState[3],
+					absoluteOffset
+				);
+				return memory.slice(0, input.length);
+			});
 		} catch (error) {
 			if (error instanceof FiseError) throw error;
-			throw new FiseError("WASM_MEMORY_LIMIT", "FISE: generated WASM execution failed.", error);
+			throw new FiseError("INVALID_PROFILE", "FISE: generated WASM execution failed.", error);
 		} finally {
-			const memory = new Uint8Array(exports.memory.buffer);
-			memory.fill(0, 0, Math.min(requiredBytes, memory.length));
 			busy = false;
 		}
 	};

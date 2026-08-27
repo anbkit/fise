@@ -10,11 +10,12 @@ tools once observed at that client.
 
 FISE—Fast Interoperable Structured Envelope—explores a narrower engineering
 goal: replace a directly consumable application representation with a strict,
-generated, profile-specific representation. Each FISE 2.0 profile is immutable
-executable code containing a randomly generated but deterministic reversible
-byte pipeline, its inverse, context mixing, layout calculations, and matching
-JavaScript/WASM execution. Producer and consumer deploy the same generated
-file. The file is public and is versioned by ordinary source control.
+generated, profile-specific representation. Each FISE 2.0 profile is a generated
+source artifact that applications treat as one immutable compatibility unit.
+Its frozen imported instance contains a randomly generated but deterministic
+reversible byte pipeline, its inverse, context mixing, layout calculations, and
+matching JavaScript/WASM execution. Producer and consumer deploy the same
+public file and version it through ordinary source control.
 
 The central hypothesis is not that FISE creates secrecy. It is that semantic
 diversity across generated profiles can reduce reuse of static signatures and
@@ -38,6 +39,7 @@ ordinary use:
 ```text
 ordinary value
 → canonical bytes and type metadata
+→ adaptive structured compression when smaller
 → generated profile transform
 → strict envelope
 → generated profile reverse
@@ -53,18 +55,26 @@ hooking, or bypassing the same restoration step.
 FISE 2.0 makes the following bounded engineering claims:
 
 1. A generated profile is a single immutable compatibility unit.
-2. Different generation runs select different meaningful reversible semantics,
-   not merely different identifiers.
+2. Generation independently samples meaningful reversible semantics; its
+   variability is not limited to identifiers or dead source changes.
 3. The generated JavaScript, WASM, and worker paths are byte-compatible.
-4. The wire format is strict, versioned, bounded, and fail-closed.
-5. Independent frames permit selective and pull-driven binary restoration.
+4. Wire parsers are strict, versioned, bounded, and reject invalid input; the
+   default runtime propagates those failures.
+5. Byte-local kernels permit direct range and pull-driven restoration from one
+   ordinary binary envelope.
 6. The runtime requires no encryption-key lifecycle.
+7. An optional instance lifetime makes the normal restoration path reject an
+   envelope after its encoded absolute expiry.
+8. An explicit binary edge mode can reduce transform work by leaving a declared
+   middle region untransformed.
+9. Structured input uses deterministic bounded compression before the Profile
+   transform only when its complete internal representation is smaller.
 
 FISE does not claim:
 
 - cryptographic confidentiality;
 - authenticity, integrity, or sender identity;
-- authorization, expiry, or replay prevention;
+- authorization, cryptographic expiry, revocation, or replay prevention;
 - resistance to dynamic instrumentation;
 - secrecy of the profile, context derivation, wire, or implementation;
 - impossibility of decoding;
@@ -92,11 +102,12 @@ state and avoids repeating the profile on every operation.
 
 ### 3.2 Git is the lifecycle mechanism
 
-Every generator invocation intentionally creates new profile code. FISE stores
-no seed, entropy record, human name, revision, lock, rotation record, or recipe
-for deterministic regeneration. The generated source file is the complete
-behavioral artifact. Git already supplies history, review, deployment linkage,
-and rollback.
+Every successful generator invocation uses fresh entropy to sample profile
+code. FISE stores no seed, entropy record, human name, revision, lock, rotation
+record, or recipe for deterministic regeneration. The generated source file is
+the complete behavioral artifact. Git already supplies history, review,
+deployment linkage, and rollback. The CLI refuses to replace an existing file
+unless the caller explicitly supplies `--override`.
 
 Replacing the file is therefore an explicit compatibility change. If an old
 envelope must be restored, the corresponding old generated code must still be
@@ -105,17 +116,41 @@ available from application history or deployment artifacts.
 ### 3.3 One byte core
 
 FISE 1.x separated string and binary profiles. FISE 2.0 removes that distinction.
-All profile kernels operate on `Uint8Array`:
+All Profile kernels operate on bytes:
 
 ```text
-JSON-safe value, including string → canonical JSON → UTF-8 bytes
+JSON-safe value, including string → canonical JSON → UTF-8 → optional LZ4 block
 Uint8Array                       → copied raw bytes
 ```
 
-A two-byte transformed metadata segment records the metadata version and
-whether the content is structured or binary. The same profile therefore
-restores strings, objects, arrays, primitives, and bytes. JSON is a serialization
-of structured data, not a third transformation algorithm.
+A transformed metadata segment records the metadata version and whether content
+is plain structured UTF-8, top-level binary, or compressed structured UTF-8.
+Compressed form additionally declares the exact original byte length. The same
+Profile therefore restores strings, objects, arrays, primitives, and bytes.
+JSON is a serialization of structured data, not a third transformation
+algorithm.
+
+For accepted structured values, canonical JSON follows RFC 8785 primitive
+serialization and UTF-16 property ordering. FISE further rejects negative zero
+and unpaired surrogates, preserves Unicode without normalization, and treats
+numbers as IEEE-754 binary64. A machine-readable conformance corpus freezes the
+resulting JSON, UTF-8, payload, compression, transport, and wire bytes for
+future language runtimes.
+
+Canonical structured UTF-8 of at least 256 bytes is encoded as one independent,
+deterministic LZ4 block only when that block plus its four-byte original-length
+field is smaller than the plain representation. Restore bounds the declared
+length, requires exact block consumption/output, then repeats fatal UTF-8, JSON,
+and canonical-form validation. Restore also caps expansion at 256 times the
+compressed block length, with a small-input floor. This
+compress-before-transform step captures repetition before the Profile transform
+makes it difficult for downstream HTTP compression to exploit, while
+deliberately keeping the public synchronous API. It does not guarantee a
+smaller final response for every payload.
+
+The internal wire is always binary. Public `encrypt` returns canonical unpadded
+Base64URL for text and structured input so it can travel in JSON, and raw bytes
+for top-level binary input. Base64URL is transport representation only.
 
 ### 3.4 Public code is not a key
 
@@ -132,11 +167,11 @@ Node's cryptographically secure random source is consulted during an explicit
 `fise generate` command. The result is a typed internal representation of one
 profile. Runtime imports do not regenerate or mutate it.
 
-For a fixed profile, payload, positional context, and absolute position,
-forward and reverse behavior is deterministic. The complete envelope is also
-deterministic: equal payloads under equal context produce equal envelopes. This
-equality leakage is a deliberate simplicity tradeoff, not a confidentiality
-property.
+For a fixed Profile, payload, positional context, absolute position, expiry,
+and binary coverage, forward and reverse behavior is deterministic. Without TTL, equal payloads
+under equal context produce equal complete envelopes. With TTL, equal inputs
+created for different absolute expiries can differ. Equality leakage remains a
+deliberate simplicity tradeoff, not a confidentiality property.
 
 ### 4.2 Reversible primitive set
 
@@ -163,11 +198,10 @@ parity.
 
 The generator does not ask users to write reverse callbacks. It derives reverse
 execution by traversing the forward stages in reverse order and replacing each
-operation with its mathematical inverse. The low-level forward and reverse
-callback ABI nevertheless receives the frozen positional context snapshot for
-advanced JavaScript-only customization. A manual change must provide a true
-inverse and cannot claim parity with the embedded WASM unless that module and
-the semantic fingerprint are regenerated and verified together.
+operation with its mathematical inverse. The emitted low-level forward and
+reverse callbacks receive the frozen positional context snapshot. They are part
+of the generated compatibility artifact, not a supported customization surface;
+applications generate a new verified profile instead of editing them.
 
 ### 4.4 Rejecting meaningless diversity
 
@@ -185,6 +219,16 @@ module creates its `Profile` instance.
 This validation does not justify an entropy-bit claim. Measuring effective
 equivalence classes remains future evaluation work.
 
+Before writing the candidate, the CLI also runs full encrypt/decrypt round
+trips for text, adaptive structured values, and binary with random synthetic positional
+context, plus empty values with the default context. It checks deterministic
+re-encryption, binary full/edge coverage, direct range and progressive
+restoration, plus both
+JavaScript → WASM/worker and WASM/worker → JavaScript interoperability. Any
+failure prevents the candidate from being published. New destinations use an
+atomic no-clobber publish, while `--override` uses atomic replacement. `fise
+verify` repeats the runtime gate without modifying the profile file.
+
 ### 4.5 Specialized output
 
 The internal stage representation is fused into one JavaScript loop for forward
@@ -192,9 +236,10 @@ execution and one for reverse execution. Runtime does not dispatch through an
 array of per-byte functions or allocate an intermediate buffer for every stage.
 The same typed stages are compiled into a profile-specific WASM module.
 
-A 128-bit opaque fingerprint is derived from normalized semantic IR. It identifies
-compatibility and enables early wrong-profile rejection. It is not a secret or
-an authentication tag.
+The CLI derives a 128-bit opaque fingerprint from normalized semantic IR. The
+runtime uses it for early wrong-profile rejection, but does not recompute the IR
+or attest the exact generated source. It is not a global uniqueness guarantee,
+secret, authentication tag, or integrity proof.
 
 ## 5. Context as external data
 
@@ -217,6 +262,18 @@ contract: `[42, "2026.08"]` differs from `["2026.08", 42]`. Context rejects
 objects, nested arrays, accessors, symbols, sparse arrays, ambiguous numbers,
 and excessive size. An omitted context is the empty array `[]`.
 
+Context must be composed only from values already available to the consumer.
+An application must not expose an authentication token, protected cookie, or
+HttpOnly session value just to make it context. Context is not a credential or
+authorization input.
+
+When TTL or binary edge coverage is enabled, core appends domain-separated wire
+policy to an internal operation binding derived from the encoded context. The
+binding drives the same mixer, segment, layout, and marker path, while generated
+callbacks still receive only the caller's positional array. This makes blind
+expiry or coverage edits inconsistent with the representation; it does not
+authenticate those fields.
+
 The mixer is a specified deterministic application mixer, not a cryptographic
 authentication hash. A 32-bit marker provides bounded mismatch detection and
 can collide.
@@ -224,15 +281,20 @@ can collide.
 ## 6. Wire format
 
 FISE 2.0 uses one binary envelope. Its fixed header carries magic, exact version,
-header length, flags, a 16-byte profile fingerprint, transformed length, and
-reserved zeros. The generated marker is inserted at the profile-calculated
-offset inside transformed bytes. Context-derived data is not appended to the
-wire.
+header length, flags, a 16-byte Profile fingerprint, transformed length,
+binary edge bytes per side or zero, and an absolute Unix expiry or zero. The generated marker is
+inserted at the Profile-calculated offset inside the logical wire payload.
+Context-derived data is not appended to the wire.
 
 The decoder validates every declared bound before allocating or transforming.
 It rejects unsupported versions, unknown flags, wrong profiles, truncation,
 trailing data, and marker disagreement. It never scans candidate profiles or
 contexts and contains no legacy decoder.
+
+For compressed structured metadata it also validates the original-length and
+expansion-ratio caps, LZ4 offsets, literal/match bounds, exact input consumption, exact output length,
+UTF-8, JSON, and canonical form. Compression adds no confidentiality; observable
+wire length still reveals size and compressibility information.
 
 Length remains an ordinary unsigned 32-bit field. Randomizing header field order
 or length codecs would create more protocol complexity, complicate indexing,
@@ -242,34 +304,55 @@ semantics instead.
 
 ## 7. Selective, parallel, and lazy restoration
 
-### 7.1 Independent frames
+### 7.1 One ordinary envelope
 
-FISF 2.0 splits a binary value into independent ordinary FISE envelopes. A
-strict outer header and contiguous index carry profile fingerprint, frame size,
-complete plaintext length, frame count, a profile/context consistency marker,
-and each inner envelope's exact offset and length. The marker is checked before
-plaintext allocation and also binds the zero-frame representation to its
-caller-supplied context; it remains a bounded mismatch signal, not an
-authentication tag.
+Generated kernels are length-preserving and byte-local. Every kernel call
+receives the logical absolute position of its first byte. FISE can therefore
+restore a selected binary interval directly from the ordinary envelope without
+an outer container, frame index, or independently encrypted inner envelopes.
 
-Full restoration visits every frame. Range restoration decrypts only frames
-intersecting a requested half-open byte interval and slices boundary bytes.
-Progressive restoration snapshots the complete container, validates the outer
-index, and decrypts one frame per consumer pull. Stopping iteration stops future
-frame work.
+Range restoration validates the complete envelope, checks its Profile/context
+marker and TTL, and restores only the two logical metadata bytes plus the
+requested half-open content interval. For an ordinary local `Uint8Array`, the
+synchronous call can borrow input for the duration of that call and copy only
+the fields and selected bytes it needs. Non-borrowable inputs are snapshotted.
+The physical marker insertion is removed while copying selected wire-payload
+bytes. The reverse kernel receives `2 + start` as its logical absolute offset.
 
-This is lazy frame decrypt, not lazy JSON. The full container is already in
-memory; FISF does not perform HTTP Range acquisition or incremental network
-parsing.
+Progressive restoration owns a complete input snapshot, performs the same
+validation when the iterator is created, and restores the next range on each
+pull. `chunkSize` is a runtime read option, not a wire or encryption parameter.
+Stopping iteration stops future reverse work.
 
-### 7.2 WASM parity
+This is lazy byte restoration, not lazy JSON or network streaming. The complete
+encrypted envelope is already in memory; FISE does not perform HTTP Range
+acquisition or incremental envelope parsing.
+
+### 7.2 Binary edge coverage
+
+Full coverage transforms metadata and all content bytes. An optional edge mode
+transforms metadata plus symmetric leading and trailing binary regions while
+copying the middle unchanged. The ordinary header carries the resolved edge
+length, and that policy is included in the Profile/context marker binding.
+Applications select edge mode once on the producing `Fise` instance. Omitting
+an explicit edge length resolves to 1 MiB per side; smaller inputs whose edges
+meet or overlap canonicalize to full coverage.
+
+Edge mode can reduce forward and reverse kernel work for large files, including
+video-oriented head/tail use cases. It still returns one complete envelope and
+does not reduce allocation or transfer length. The clear middle remains
+directly inspectable; disrupting a file parser or player is not a confidentiality
+guarantee. Range and progressive restoration reverse only intersections with
+covered edges and copy selected middle bytes directly.
+
+### 7.3 WASM parity
 
 The CLI embeds a WASM module compiled from the exact generated stages. Calling
 `withWasm()` compiles and instantiates that module once, then returns another
 profile-bound `Fise`. Envelope layout remains in TypeScript; only the byte kernel
 runs in WASM. JavaScript can decrypt WASM-created envelopes and vice versa.
 
-### 7.3 Worker parity
+### 7.4 Worker parity
 
 A retained parallel runtime starts dedicated Node or browser module workers.
 Each worker compiles the generated profile's WASM module once. Large inputs are
@@ -277,16 +360,42 @@ split into contiguous chunks; tasks receive the original absolute position,
 derived context segment, and context lanes. Byte-local kernels therefore produce the same result
 as an unsplit loop. Small inputs stay local to avoid worker overhead.
 
-Parallel ordinary and framed methods are asynchronous and the retained pool has
-an explicit close lifecycle.
+Parallel encrypt/decrypt and range work are asynchronous and the retained pool has
+an explicit close lifecycle. TTL remains TypeScript orchestration: generated
+JavaScript, WASM, and worker kernels receive no clock.
+
+The packed-browser release gate exercises native ESM and a Vite production
+build under restrictive CSP. It verifies that the package worker is emitted and
+runs in Chromium, and that the bundled frontend fetches and restores
+backend-produced JSON and binary HTTP responses. This is concrete
+Vite/Chromium evidence, not a claim about every bundler, framework, browser,
+mobile device, or deployed CSP.
+
+### 7.5 Explicit raw fallback
+
+The default profile-bound runtime propagates every rejected ordinary operation.
+Applications with an explicit availability requirement may construct
+`new Fise(profile, { strict: false })`. The runtime still performs the same
+validation and transform, but a caught recoverable `FiseError` from ordinary
+`encrypt` or `decrypt` returns that method's exact input. Expiration and clock
+failures always propagate. WASM and worker instances preserve the option;
+range/progressive methods, backend startup, and closed-worker calls remain
+strict.
+
+This is application-level pass-through, not a second wire decoder. It makes a
+deliberate tradeoff: readable input can continue after failed encryption, and
+untrusted input can continue after failed decryption. The result has no trusted
+success discriminator. Deployments that enable it must support both outcomes,
+validate application data independently, and measure fallback at the transport
+boundary.
 
 ## 8. Threat model
 
 FISE assumes the application controls producer and consumer releases but does
 not trust the client as a secret-holding or tamper-proof environment. An attacker
 may read bundled JavaScript, generated profile code, WASM bytes, envelopes,
-context conventions, and application state. They may instrument functions, workers, network
-calls, or memory.
+context conventions, and application state. They may instrument functions,
+workers, network calls, memory, and clock behavior.
 
 Against such an attacker, FISE cannot protect plaintext once the application
 uses it. The strongest accurate statement is:
@@ -309,8 +418,11 @@ evaluation program should separate four questions.
 - forward/reverse property sweeps;
 - all 256 byte values and boundary lengths;
 - structured and binary metadata restoration;
+- adaptive compression selection, exact LZ4 restoration, malformed blocks, and
+  decompressed-size bounds;
 - profile/context mismatch behavior;
-- malformed headers, lengths, indexes, and ranges;
+- malformed Base64URL, headers, coverage fields, lengths, and ranges;
+- TTL boundaries, clock failures, and expiry metadata mutation;
 - input ownership and output non-aliasing;
 - full/range/progressive equality;
 - JavaScript/WASM/worker byte parity.
@@ -330,17 +442,45 @@ evaluation program should separate four questions.
 - warm and cold JS/WASM operations;
 - worker startup and retained-pool throughput;
 - small and large structured/binary payloads;
-- FISF full, aligned range, unaligned range, first pull, and complete drain;
+- structured identity, gzip, and Brotli transfer sizes before and after FISE;
+- binary full/edge encryption, aligned/unaligned range, first pull, and
+  complete progressive drain;
 - allocation, retained WASM memory, and wire overhead.
+
+The repository command `npm run benchmark:structured` provides the required
+structured transport matrix for deterministic 1, 100, and 1,000-record fixtures
+(and larger suites in full mode). It reports canonical bytes, FISE JSON bytes,
+gzip/Brotli results, and encrypt/decrypt timing. Release-candidate generation
+stores the machine-readable result. These fixtures demonstrate the transport
+trade-off; they do not predict an application's compression ratio, CDN cost, or
+latency without application-specific measurement.
+
+A reference default run on Node 22.14.0/darwin-arm64 with the committed fixture
+produced the following deterministic sizes. “FISE JSON” is one `{ data }` field;
+gzip and Brotli columns show `raw / FISE` bytes:
+
+| Records | Canonical JSON | FISE JSON | gzip raw/FISE | Brotli raw/FISE |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 177 | 309 | 156 / 278 | 122 / 261 |
+| 100 | 17,652 | 6,326 | 2,804 / 4,798 | 1,980 / 4,784 |
+| 1,000 | 177,485 | 54,010 | 24,502 / 40,720 | 15,238 / 40,634 |
+
+The larger fixture shows why compression belongs before the Profile transform:
+the FISE JSON representation falls from 177,485 to 54,010 bytes instead of
+expanding to transformed raw-JSON size. It also shows the remaining cost:
+ordinary JSON still compresses more efficiently under gzip and Brotli. The
+single-record fixture demonstrates fixed envelope/Base64URL overhead. FISE
+therefore needs workload-specific measurement rather than a universal “smaller”
+or “faster” claim.
 
 ### 9.4 Adaptation cost
 
-The central product hypothesis requires controlled comparison between conventional
-payloads, one fixed public transform, and many generated profiles. Measurements
-should distinguish static identification, implementation of a decoder, dynamic
-hooking, maintenance after profile replacement, and false positives. Results
-must report tools, samples, release setup, and uncertainty; they must not be
-translated into cryptographic strength.
+The central product hypothesis requires controlled comparison between
+conventional payloads, one fixed public transform, and many generated profiles.
+Measurements should distinguish static identification, implementation of a
+decoder, dynamic hooking, maintenance after profile replacement, and false
+positives. Results must report tools, samples, release setup, and uncertainty;
+they must not be translated into cryptographic strength.
 
 ## 10. Interoperability and deployment
 
@@ -349,15 +489,29 @@ Producer and consumer must import the exact same committed file. Multiple
 profiles are allowed for independent application domains, but they are not tied
 to data types.
 
+In a monorepo, one shared package should own the generated module. With separate
+repositories, one side generates it and distributes that exact artifact to the
+other side; independent generation is incompatible by design. The applications
+also share the positional context convention, while operation-specific values
+remain outside the profile and envelope.
+
+Profile replacement must be coordinated. An atomic release deploys matching
+producer and consumer code together. A rolling web release needs an
+application-owned versioned endpoint or versioned frontend asset so old clients
+continue to reach the old producer until clients and caches drain. FISE does not
+add Profile-history lookup or a legacy decoder for this purpose.
+
 Because the generator intentionally stores no seed or IR artifact, another
 language backend cannot be recreated later from a generation recipe. True
 multi-language generation would need all target artifacts emitted and validated
 in the same invocation. That is a future extension, not an implicit property of
-the current TypeScript package.
+the current TypeScript package. The packaged JavaScript conformance Profile and
+vectors freeze the wire baseline for that work; they are not evidence that a
+Python runtime already exists.
 
 Package and wire 2.0 intentionally remove 1.x functions, default profiles,
-manifests, builders, rotation artifacts, string envelopes, and fallback parsing.
-Coordinated upgrades are required.
+manifests, builders, rotation artifacts, the separate legacy string wire, and
+legacy fallback parsing. Coordinated upgrades are required.
 
 ## 11. Limitations
 
@@ -365,10 +519,21 @@ Coordinated upgrades are required.
 - Dynamic hooking bypasses static diversity.
 - Markers do not authenticate payloads.
 - Canonical JSON does not represent arbitrary JavaScript objects.
-- FISF range work is frame-granular, not arbitrary-byte transform work.
-- Progressive restore starts from a complete in-memory container.
+- Adaptive compression does not guarantee a smaller HTTP response and exposes
+  ordinary size/compressibility information.
+- Range work is arbitrary-byte but begins with complete-envelope validation and
+  metadata restoration.
+- Progressive restore starts from a complete in-memory envelope.
+- Binary edge mode leaves its middle region untransformed and cannot claim full
+  content coverage.
 - Worker and WASM availability depends on runtime and policy.
+- Vite/Chromium release evidence does not prove other bundlers, browsers, mobile
+  memory limits, or an application's deployed CSP.
 - Source control is responsible for retaining old profile code when required.
+- Opt-in raw fallback can expose untransformed data or pass rejected input to
+  application code.
+- Runtime TTL can be bypassed by a controlled client and cannot revoke plaintext
+  already restored or prevent replay within the valid interval.
 - The adaptation-gap hypothesis needs independent empirical measurement.
 
 ## 12. Conclusion
@@ -376,9 +541,14 @@ Coordinated upgrades are required.
 FISE 2.0 narrows the project to one coherent idea: a generated, immutable,
 profile-governed application representation. A stateless CLI creates different
 meaningful reversible pipelines; a profile-bound class applies them uniformly
-to structured and binary data; strict envelopes reject ambiguity; frames enable
-selective and lazy byte restoration; and JavaScript, WASM, and workers share the
-same semantics.
+to structured and binary data; strict parsers reject ambiguity by default;
+byte-local kernels enable direct selective and lazy byte restoration; and
+JavaScript, WASM, and workers share the same semantics. Adaptive structured
+compression reduces the transport penalty for repetitive JSON without changing
+the public API. Optional
+constructor TTL adds a bounded normal-runtime freshness policy, and applications
+may explicitly trade other default rejection behavior for raw
+ordinary-operation pass-through.
 
 The approach is useful only when its boundary is stated precisely. FISE can add
 profile-specific adaptation work. It cannot make frontend plaintext secret.

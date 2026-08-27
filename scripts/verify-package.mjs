@@ -24,6 +24,8 @@ assert.deepEqual(packageJson.exports, {
 });
 assert.deepEqual(packageJson.files, [
 	"dist",
+	"conformance/README.md",
+	"conformance/v2/*",
 	"docs/*.md",
 	"examples/*.mjs",
 	"examples/README.md",
@@ -40,23 +42,77 @@ for (const path of [
 	"../dist/v2/fise.js",
 	"../dist/v2/profile.js",
 	"../dist/v2/generator.js",
+	"../dist/v2/verifier.js",
 	"../dist/v2/wasm.js",
 	"../dist/v2/parallel.js",
-	"../dist/v2/framed.js",
+	"../dist/v2/base64Url.js",
+	"../dist/v2/binary.js",
+	"../dist/v2/coverage.js",
+	"../dist/v2/lz4.js",
+	"../dist/v2/temporal.js",
 	"../dist/v2/workers/profileWorker.js",
+	"../conformance/README.md",
+	"../conformance/v2/profile.generated.mjs",
+	"../conformance/v2/vectors.json",
 	"../examples/README.md",
 	"../examples/fise.profile.mjs",
 	"../examples/basic.mjs",
-	"../examples/framed.mjs",
+	"../examples/api-session.mjs",
+	"../examples/agent-stream.mjs",
+	"../examples/binary-file.mjs",
+	"../examples/binary-restoration.mjs",
 	"../examples/backends.mjs",
+	"../examples/failure-boundaries.mjs",
+	"../examples/raw-fallback.mjs",
+	"../examples/ttl.mjs",
+	"../examples/web-application.mjs",
 	"../examples/run-all.mjs",
+	"../docs/CLI.md",
+	"../docs/BINARY_DATA.md",
+	"../docs/WEB_APPLICATIONS.md",
 	"../docs/SPEC.md",
+	"../docs/AGENT_GUIDE.md",
 	"../docs/PROFILES.md",
 	"../docs/SECURITY.md",
 	"../docs/WHITEPAPER.md"
 ]) {
 	assert.ok(existsSync(new URL(path, import.meta.url)), `Missing package artifact: ${path}`);
 }
+
+const conformanceVectors = JSON.parse(
+	readFileSync(new URL("../conformance/v2/vectors.json", import.meta.url), "utf8")
+);
+const conformanceProfileSource = readFileSync(
+	new URL("../conformance/v2/profile.generated.mjs", import.meta.url),
+	"utf8"
+);
+assert.equal(conformanceVectors.format, "fise-v2-conformance");
+assert.deepEqual(conformanceVectors.wireVersion, { major: 2, minor: 0 });
+for (const section of [
+	"contexts",
+	"canonicalJson",
+	"numberSerialization",
+	"lz4Blocks",
+	"invalidLz4Blocks",
+	"payloads",
+	"envelopes",
+	"freshness",
+	"invalidTransports",
+	"invalidEnvelopes",
+	"invalidPayloadEnvelopes",
+	"invalid",
+	"invalidContext"
+]) {
+	assert.ok(
+		Array.isArray(conformanceVectors[section]) && conformanceVectors[section].length > 0,
+		`Conformance corpus section is empty: ${section}`
+	);
+}
+assert.match(
+	conformanceProfileSource,
+	new RegExp(`Profile\\.generated\\(\\n  "${conformanceVectors.profileFingerprint}"`)
+);
+assert.doesNotMatch(conformanceProfileSource, /\/\/|\/\*/);
 assert.notEqual(
 	statSync(new URL("../dist/cli.js", import.meta.url)).mode & 0o111,
 	0,
@@ -66,7 +122,6 @@ assert.notEqual(
 const api = await import("fise");
 assert.deepEqual(Object.keys(api).sort(), [
 	"FISE_WIRE_VERSION",
-	"FISF_WIRE_VERSION",
 	"Fise",
 	"FiseError",
 	"Profile",
@@ -74,7 +129,6 @@ assert.deepEqual(Object.keys(api).sort(), [
 	"isWasmSupported"
 ]);
 assert.deepEqual(api.FISE_WIRE_VERSION, { major: 2, minor: 0 });
-assert.deepEqual(api.FISF_WIRE_VERSION, { major: 2, minor: 0 });
 for (const legacy of [
 	"fiseEncrypt",
 	"fiseBinaryEncrypt",
@@ -91,14 +145,18 @@ assert.deepEqual(
 	readdirSync(new URL("../examples/", import.meta.url)).sort(),
 	[
 		"README.md",
+		"agent-stream.mjs",
 		"api-session.mjs",
 		"backends.mjs",
 		"basic.mjs",
 		"binary-file.mjs",
+		"binary-restoration.mjs",
 		"failure-boundaries.mjs",
 		"fise.profile.mjs",
-		"framed.mjs",
-		"run-all.mjs"
+		"raw-fallback.mjs",
+		"run-all.mjs",
+		"ttl.mjs",
+		"web-application.mjs"
 	]
 );
 
@@ -114,11 +172,23 @@ for (const legacy of [
 ]) {
 	assert.ok(!rootEntries.includes(legacy), `Legacy dist artifact remained: ${legacy}`);
 }
+assert.ok(!existsSync(new URL("../dist/v2/framed.js", import.meta.url)));
+assert.ok(!existsSync(new URL("../docs/FRAMED_BINARY.md", import.meta.url)));
 
 const publicTypes = readFileSync(new URL("../dist/index.d.ts", import.meta.url), "utf8");
 assert.match(publicTypes, /export \{ Fise \}/);
 assert.match(publicTypes, /export \{ Profile \}/);
-for (const legacy of ["FiseBuilder", "FiseStringProfile", "FiseBinaryProfile", "fiseEncrypt"] ) {
+assert.match(publicTypes, /FiseOptions/);
+assert.match(publicTypes, /FiseBinaryOptions/);
+assert.match(publicTypes, /FiseEncrypted/);
+for (const legacy of [
+	"FiseBuilder",
+	"FiseStringProfile",
+	"FiseBinaryProfile",
+	"FiseBinaryEncryptOptions",
+	"FiseEncryptOptions",
+	"fiseEncrypt"
+]) {
 	assert.ok(!publicTypes.includes(legacy), `Legacy public type remained: ${legacy}`);
 }
 

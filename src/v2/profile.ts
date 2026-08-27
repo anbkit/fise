@@ -1,12 +1,18 @@
 import { FiseError } from "../errors.js";
-import { assertBytes, copyBytes, hexToBytes } from "./bytes.js";
+import {
+	assertBytes,
+	checkedByteLength,
+	copyBytes,
+	hexToBytes,
+	snapshotBytes
+} from "./bytes.js";
 import type { FiseContext } from "./types.js";
 
 export type ProfileContextState = readonly [number, number, number, number];
 
 export interface ProfileLayoutInput {
 	readonly transformedLength: number;
-	readonly encodedContextLength: number;
+	readonly operationBindingLength: number;
 	readonly contextSegmentLength: number;
 }
 
@@ -137,8 +143,7 @@ export class Profile {
 }
 
 function snapshotWasm(value: Uint8Array): Uint8Array {
-	assertBytes(value, "generated WASM module", "INVALID_PROFILE");
-	const snapshot = copyBytes(value);
+	const snapshot = snapshotBytes(value, "generated WASM module", "INVALID_PROFILE");
 	if (snapshot.length < 8 || snapshot.length > 1024 * 1024) {
 		throw new FiseError("INVALID_PROFILE", "FISE: generated WASM module has an invalid size.");
 	}
@@ -167,7 +172,7 @@ export function runProfileKernel(
 ): Uint8Array {
 	assertContextSegment(runtime, contextSegment);
 	let output: Uint8Array;
-	const ownedInput = copyBytes(input);
+	const ownedInput = snapshotBytes(input, `${operation} kernel input`, "INVALID_PROFILE");
 	try {
 		output = runtime[operation](
 			ownedInput,
@@ -179,7 +184,7 @@ export function runProfileKernel(
 	} catch (error) {
 		if (error instanceof FiseError) throw error;
 		throw new FiseError(
-			"INVALID_CIPHERTEXT",
+			operation === "forward" ? "INVALID_PROFILE" : "INVALID_CIPHERTEXT",
 			`FISE: generated ${operation} kernel failed.`,
 			error
 		);
@@ -188,7 +193,7 @@ export function runProfileKernel(
 	if (output === ownedInput) {
 		throw new FiseError("INVALID_PROFILE", `FISE: generated ${operation} kernel aliased its input.`);
 	}
-	const ownedOutput = copyBytes(output);
+	const ownedOutput = snapshotBytes(output, `${operation} kernel output`, "INVALID_PROFILE");
 	if (ownedOutput.length !== input.length) {
 		throw new FiseError(
 			"INVALID_PROFILE",
@@ -356,7 +361,7 @@ function validateRuntime(runtime: ProfileRuntime): void {
 	}
 	const layout = {
 		transformedLength: input.length,
-		encodedContextLength: encodedContext.length,
+		operationBindingLength: encodedContext.length,
 		contextSegmentLength: contextSegment.length
 	};
 	profileOffset(runtime, layout, contextState, contextSegment, context);
@@ -364,8 +369,7 @@ function validateRuntime(runtime: ProfileRuntime): void {
 }
 
 function assertContextSegment(runtime: ProfileRuntime, value: Uint8Array): void {
-	assertBytes(value, "context segment", "INVALID_PROFILE");
-	if (value.length !== runtime.contextSegmentLength) {
+	if (checkedByteLength(value, "context segment", "INVALID_PROFILE") !== runtime.contextSegmentLength) {
 		throw new FiseError(
 			"INVALID_PROFILE",
 			"FISE: context segment length does not match the generated profile."

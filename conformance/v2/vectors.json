@@ -1,0 +1,748 @@
+{
+  "format": "fise-v2-conformance",
+  "wireVersion": {
+    "major": 2,
+    "minor": 0
+  },
+  "profileFingerprint": "f05f6a3a0c8b679ea3e93e524597c99b",
+  "contexts": [
+    {
+      "id": "default",
+      "inputJson": "[]",
+      "canonicalJson": "[]",
+      "encodedBase64Url": "W10"
+    },
+    {
+      "id": "session",
+      "inputJson": "[\"session_demo\",\"user_42\",\"orders\",\"v2\",7]",
+      "canonicalJson": "[\"session_demo\",\"user_42\",\"orders\",\"v2\",7]",
+      "encodedBase64Url": "WyJzZXNzaW9uX2RlbW8iLCJ1c2VyXzQyIiwib3JkZXJzIiwidjIiLDdd"
+    }
+  ],
+  "canonicalJson": [
+    {
+      "id": "rfc8785-primitives",
+      "inputJson": "{\"numbers\":[333333333.33333329,1E30,4.50,2e-3,0.000000000000000000000000001],\"string\":\"€$\\u000F\\nA'B\\\"\\\\\\\"/\",\"literals\":[null,true,false]}",
+      "canonicalJson": "{\"literals\":[null,true,false],\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27],\"string\":\"€$\\u000f\\nA'B\\\"\\\\\\\"/\"}",
+      "utf8Hex": "7b226c69746572616c73223a5b6e756c6c2c747275652c66616c73655d2c226e756d62657273223a5b3333333333333333332e333333333333332c31652b33302c342e352c302e3030322c31652d32375d2c22737472696e67223a22e282ac245c75303030665c6e4127425c225c5c5c222f227d"
+    },
+    {
+      "id": "rfc8785-utf16-order",
+      "inputJson": "{\"€\":\"Euro Sign\",\"\\r\":\"Carriage Return\",\"דּ\":\"Hebrew Letter Dalet With Dagesh\",\"1\":\"One\",\"😀\":\"Emoji: Grinning Face\",\"\":\"Control\",\"ö\":\"Latin Small Letter O With Diaeresis\"}",
+      "canonicalJson": "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\":\"Control\",\"ö\":\"Latin Small Letter O With Diaeresis\",\"€\":\"Euro Sign\",\"😀\":\"Emoji: Grinning Face\",\"דּ\":\"Hebrew Letter Dalet With Dagesh\"}",
+      "utf8Hex": "7b225c72223a2243617272696167652052657475726e222c2231223a224f6e65222c22c280223a22436f6e74726f6c222c22c3b6223a224c6174696e20536d616c6c204c6574746572204f205769746820446961657265736973222c22e282ac223a224575726f205369676e222c22f09f9880223a22456d6f6a693a204772696e6e696e672046616365222c22efacb3223a22486562726577204c65747465722044616c6574205769746820446167657368227d"
+    },
+    {
+      "id": "unicode-preservation",
+      "inputJson": "{\"decomposed\":\"é\",\"composed\":\"é\",\"emoji\":\"😀\"}",
+      "canonicalJson": "{\"composed\":\"é\",\"decomposed\":\"é\",\"emoji\":\"😀\"}",
+      "utf8Hex": "7b22636f6d706f736564223a22c3a9222c226465636f6d706f736564223a2265cc81222c22656d6f6a69223a22f09f9880227d"
+    },
+    {
+      "id": "recursive-order",
+      "inputJson": "{\"z\":[{\"b\":2,\"a\":1},3],\"a\":{\"y\":2,\"x\":1}}",
+      "canonicalJson": "{\"a\":{\"x\":1,\"y\":2},\"z\":[{\"a\":1,\"b\":2},3]}",
+      "utf8Hex": "7b2261223a7b2278223a312c2279223a327d2c227a223a5b7b2261223a312c2262223a327d2c335d7d"
+    }
+  ],
+  "numberSerialization": [
+    {
+      "ieee754Hex": "0000000000000000",
+      "canonicalJson": "0"
+    },
+    {
+      "ieee754Hex": "0000000000000001",
+      "canonicalJson": "5e-324"
+    },
+    {
+      "ieee754Hex": "8000000000000001",
+      "canonicalJson": "-5e-324"
+    },
+    {
+      "ieee754Hex": "7fefffffffffffff",
+      "canonicalJson": "1.7976931348623157e+308"
+    },
+    {
+      "ieee754Hex": "ffefffffffffffff",
+      "canonicalJson": "-1.7976931348623157e+308"
+    },
+    {
+      "ieee754Hex": "4340000000000000",
+      "canonicalJson": "9007199254740992"
+    },
+    {
+      "ieee754Hex": "c340000000000000",
+      "canonicalJson": "-9007199254740992"
+    },
+    {
+      "ieee754Hex": "4430000000000000",
+      "canonicalJson": "295147905179352830000"
+    },
+    {
+      "ieee754Hex": "44b52d02c7e14af5",
+      "canonicalJson": "9.999999999999997e+22"
+    },
+    {
+      "ieee754Hex": "44b52d02c7e14af6",
+      "canonicalJson": "1e+23"
+    },
+    {
+      "ieee754Hex": "44b52d02c7e14af7",
+      "canonicalJson": "1.0000000000000001e+23"
+    },
+    {
+      "ieee754Hex": "444b1ae4d6e2ef4e",
+      "canonicalJson": "999999999999999700000"
+    },
+    {
+      "ieee754Hex": "444b1ae4d6e2ef4f",
+      "canonicalJson": "999999999999999900000"
+    },
+    {
+      "ieee754Hex": "444b1ae4d6e2ef50",
+      "canonicalJson": "1e+21"
+    },
+    {
+      "ieee754Hex": "3eb0c6f7a0b5ed8c",
+      "canonicalJson": "9.999999999999997e-7"
+    },
+    {
+      "ieee754Hex": "3eb0c6f7a0b5ed8d",
+      "canonicalJson": "0.000001"
+    },
+    {
+      "ieee754Hex": "41b3de4355555553",
+      "canonicalJson": "333333333.3333332"
+    },
+    {
+      "ieee754Hex": "41b3de4355555554",
+      "canonicalJson": "333333333.33333325"
+    },
+    {
+      "ieee754Hex": "41b3de4355555555",
+      "canonicalJson": "333333333.3333333"
+    },
+    {
+      "ieee754Hex": "41b3de4355555556",
+      "canonicalJson": "333333333.3333334"
+    },
+    {
+      "ieee754Hex": "41b3de4355555557",
+      "canonicalJson": "333333333.33333343"
+    },
+    {
+      "ieee754Hex": "becbf647612f3696",
+      "canonicalJson": "-0.0000033333333333333333"
+    },
+    {
+      "ieee754Hex": "43143ff3c1cb0959",
+      "canonicalJson": "1424953923781206.2"
+    }
+  ],
+  "lz4Blocks": [
+    {
+      "id": "empty",
+      "inputHex": "",
+      "compressedHex": "00"
+    },
+    {
+      "id": "literal-only-20",
+      "inputHex": "000102030405060708090a0b0c0d0e0f10111213",
+      "compressedHex": "f005000102030405060708090a0b0c0d0e0f10111213"
+    },
+    {
+      "id": "overlap-match",
+      "inputHex": "6162636461626364616263646566676869",
+      "compressedHex": "44616263640400506566676869"
+    },
+    {
+      "id": "extended-match",
+      "inputHex": "616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161",
+      "compressedHex": "1f610100ff35506161616161"
+    },
+    {
+      "id": "latest-candidate",
+      "inputHex": "6162636431323334616263643536373861626364616263645441494c21",
+      "compressedHex": "80616263643132333408004035363738080090616263645441494c21"
+    },
+    {
+      "id": "hash-collision-single-candidate",
+      "inputHex": "01000000404142434445464748494a4b76c50000606162636465666768696a6b01000000",
+      "compressedHex": "f01501000000404142434445464748494a4b76c50000606162636465666768696a6b01000000"
+    }
+  ],
+  "invalidLz4Blocks": [
+    {
+      "id": "truncated-extended-length",
+      "compressedHex": "f0",
+      "expectedLength": 15,
+      "errorCode": "INVALID_PAYLOAD"
+    },
+    {
+      "id": "zero-distance",
+      "compressedHex": "000000",
+      "expectedLength": 4,
+      "errorCode": "INVALID_PAYLOAD"
+    },
+    {
+      "id": "distance-before-output",
+      "compressedHex": "000100",
+      "expectedLength": 4,
+      "errorCode": "INVALID_PAYLOAD"
+    },
+    {
+      "id": "literal-output-overrun",
+      "compressedHex": "4061626364",
+      "expectedLength": 3,
+      "errorCode": "INVALID_PAYLOAD"
+    },
+    {
+      "id": "missing-final-literal-sequence",
+      "compressedHex": "44616263640400",
+      "expectedLength": 12,
+      "errorCode": "INVALID_PAYLOAD"
+    },
+    {
+      "id": "too-few-final-literals",
+      "compressedHex": "446162636404001065",
+      "expectedLength": 13,
+      "errorCode": "INVALID_PAYLOAD"
+    }
+  ],
+  "payloads": [
+    {
+      "id": "structured-plain",
+      "kind": "json",
+      "inputJson": "{\"z\":3,\"a\":{\"y\":2,\"x\":1},\"message\":\"Xin chào 👋\"}",
+      "payloadHex": "01017b2261223a7b2278223a312c2279223a327d2c226d657373616765223a2258696e206368c3a06f20f09f918b222c227a223a337d"
+    },
+    {
+      "id": "structured-compressed",
+      "kind": "json",
+      "inputJson": "{\"message\":\"FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance FISE structured conformance \",\"status\":\"ready\"}",
+      "payloadHex": "01030000039fff197b226d657373616765223a2246495345207374727563747572656420636f6e666f726d616e6365201c00ffffff54f004222c22737461747573223a227265616479227d"
+    },
+    {
+      "id": "binary",
+      "kind": "binary",
+      "inputHex": "0001027f80feff",
+      "payloadHex": "01020001027f80feff"
+    },
+    {
+      "id": "threshold-255",
+      "kind": "json",
+      "inputJson": "{\"v\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+      "canonicalLength": 255,
+      "payloadType": 1,
+      "payloadHex": "01017b2276223a2261616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161616161227d"
+    },
+    {
+      "id": "threshold-256-compressed",
+      "kind": "json",
+      "inputJson": "{\"v\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}",
+      "canonicalLength": 256,
+      "payloadType": 3,
+      "payloadHex": "0103000001007f7b2276223a22610100e150616161227d"
+    },
+    {
+      "id": "threshold-256-plain",
+      "kind": "json",
+      "inputJson": "{\"v\":\"TS9Qhop0lOdgxknMXOlSLY7iRKrW501KvOtc107QV8Xsj6hAlI9YZg3OLSfk7ihgP2JEHA5q961a3A50FWPOtSx0hKFGryDMH2xSreXMxyxGRq9ij8rmHkjYfgpanyNQVyxcD4dm1WpKViPsJ8bad4hc32JGVKRsbILIjchUhI3QlWlgpWVwr8HQzwT0b4rCZKv4roTa3gfUpYJ0X2L23INyJulojmLgpODmBUrobEdULWTS7QTK76zi\"}",
+      "canonicalLength": 256,
+      "payloadType": 1,
+      "payloadHex": "01017b2276223a2254533951686f70306c4f6467786b6e4d584f6c534c593769524b72573530314b764f746331303751563858736a3668416c4939595a67334f4c53666b3769686750324a454841357139363161334135304657504f74537830684b46477279444d483278537265584d78797847527139696a38726d486b6a59666770616e794e51567978634434646d3157704b566950734a3862616434686333324a47564b527362494c496a636855684933516c576c6770575677723848517a775430623472435a4b7634726f54613367665570594a3058324c3233494e794a756c6f6a6d4c67704f446d4255726f624564554c5754533751544b37367a69227d"
+    }
+  ],
+  "envelopes": [
+    {
+      "id": "text-default-context",
+      "kind": "json",
+      "inputJson": "\"FISE works across runtimes 🌐\"",
+      "transport": "base64url",
+      "expectedTransport": "RklTRQIAKADwX2o6DItnnqPpPlJFl8mbAAAAIwAAAAAAAAAAAAAAAIYAONuIwWwX_kS6IQL6j67IXA0T3Ogu3f7IZadThVwcOTOHAnZ98w",
+      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b00000023000000000000000000000000860038db88c16c17fe44ba2102fa8faec85c0d13dce82eddfec865a753855c1c39338702767df3"
+    },
+    {
+      "id": "structured",
+      "kind": "json",
+      "inputJson": "{\"message\":\"Xin chào 👋\",\"count\":3,\"ok\":true}",
+      "context": [
+        "session_demo",
+        "user_42",
+        "orders",
+        "v2",
+        7
+      ],
+      "transport": "base64url",
+      "expectedTransport": "RklTRQIAKADwX2o6DItnnqPpPlJFl8mbAAAAMgAAAAAAAAAAAAAAAN1LeRiprIfOk5fuu7cIw4_H58SqL741qLnWwxnWmmafkYHxvxG4FGhGGlTcnArGYKdRcR9Peg",
+      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b00000032000000000000000000000000dd4b7918a9ac87ce9397eebbb708c38fc7e7c4aa2fbe35a8b9d6c319d69a669f9181f1bf11b81468461a54dc9c0ac660a751711f4f7a"
+    },
+    {
+      "id": "structured-compressed",
+      "kind": "json",
+      "inputFromPayload": "structured-compressed",
+      "context": [
+        "session_demo",
+        "user_42",
+        "orders",
+        "v2",
+        7
+      ],
+      "transport": "base64url",
+      "expectedTransport": "RklTRQIAKADwX2o6DItnnqPpPlJFl8mbAAAASwAAAAAAAAAAAAAAAN1ohmirbdqbBJcO63cBlbOfMDH8S9os7pcxtRdm3BVmzAXeE4LRSbnpmY3HZTC9O883VI86SwEsA7_lNdXcUxQKPXl0GDJObKg-tUScFZQ",
+      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b0000004b000000000000000000000000dd688668ab6dda9b04970eeb770195b39f3031fc4bda2cee9731b51766dc1566cc05de1382d149b9e9998dc76530bd3bcf37548f3a4b012c03bfe535d5dc53140a3d797418324e6ca83eb5449c1594"
+    },
+    {
+      "id": "binary-full",
+      "kind": "binary",
+      "inputHex": "00010203040506070809fafbfcfdfeff",
+      "context": [
+        "session_demo",
+        "user_42",
+        "orders",
+        "v2",
+        7
+      ],
+      "transport": "bytes",
+      "range": {
+        "start": 3,
+        "endExclusive": 12,
+        "expectedHex": "03040506070809fafb"
+      },
+      "progressive": {
+        "chunkSize": 5,
+        "expectedChunksHex": [
+          "0001020304",
+          "0506070809",
+          "fafbfcfdfe",
+          "ff"
+        ]
+      },
+      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b00000012000000000000000000000000ddf186b3369db48a185dbf7a86e36bc9efbbaaf89aa7"
+    },
+    {
+      "id": "binary-edges",
+      "kind": "binary",
+      "inputHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "context": [
+        "session_demo",
+        "user_42",
+        "orders",
+        "v2",
+        7
+      ],
+      "options": {
+        "binary": {
+          "mode": "edges",
+          "edgeBytes": 6
+        }
+      },
+      "transport": "bytes",
+      "range": {
+        "start": 4,
+        "endExclusive": 28,
+        "expectedHex": "0405060708090a0b0c0d0e0f101112131415161718191a1b"
+      },
+      "progressive": {
+        "chunkSize": 7,
+        "expectedChunksHex": [
+          "00010203040506",
+          "0708090a0b0c0d",
+          "0e0f1011121314",
+          "15161718191a1b",
+          "1c1d1e1f"
+        ]
+      },
+      "wireHex": "4649534502002801f05f6a3a0c8b679ea3e93e524597c99b00000022000000060000000000000000d041048f3fe02cb10607080956eecf330a0b0c0d0e0f10111213141516171819910133c58757"
+    },
+    {
+      "id": "binary-edges-ttl",
+      "kind": "binary",
+      "inputHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "context": [
+        "session_demo",
+        "user_42",
+        "asset",
+        "v2",
+        9
+      ],
+      "options": {
+        "ttlSeconds": 45,
+        "binary": {
+          "mode": "edges",
+          "edgeBytes": 8
+        }
+      },
+      "clockMilliseconds": 1800000100456,
+      "expiresAtSeconds": "1800000146",
+      "transport": "bytes",
+      "range": {
+        "start": 6,
+        "endExclusive": 25,
+        "expectedHex": "060708090a0b0c0d0e0f101112131415161718"
+      },
+      "progressive": {
+        "chunkSize": 9,
+        "expectedChunksHex": [
+          "000102030405060708",
+          "090a0b0c0d0e0f1011",
+          "12131415161718191a",
+          "1b1c1d1e1f20212223",
+          "2425262728292a2b2c",
+          "2d2e2f303132333435",
+          "363738393a3b3c3d3e",
+          "3f"
+        ]
+      },
+      "wireHex": "4649534502002801f05f6a3a0c8b679ea3e93e524597c99b0000004200000008000000006b49d29292c7692e5fdcd913ef3208090a0b0c0d0e0f101112131415161718191a1b1c1d99833e6f1e1f202122232425262728292a2b2c2d2e2f3031323334353637f0d56f5c77cb0f42"
+    },
+    {
+      "id": "structured-ttl",
+      "kind": "json",
+      "inputJson": "{\"event\":\"completed\",\"sequence\":7}",
+      "context": [
+        "session_demo",
+        "user_42",
+        "orders",
+        "v2",
+        7
+      ],
+      "options": {
+        "ttlSeconds": 30
+      },
+      "clockMilliseconds": 1800000000123,
+      "expiresAtSeconds": "1800000031",
+      "transport": "base64url",
+      "expectedTransport": "RklTRQIAKADwX2o6DItnnqPpPlJFl8mbAAAAJAAAAAAAAAAAa0nSH3LG_eldLJF2fkcw38cMGMrI4NPXx-Y_ph56hezgm3fg95puMXb3k6k",
+      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b0000002400000000000000006b49d21f72c6fde95d2c91767e4730dfc70c18cac8e0d3d7c7e63fa61e7a85ece09b77e0f79a6e3176f793a9"
+    }
+  ],
+  "freshness": [
+    {
+      "id": "one-millisecond-before-expiry",
+      "sourceEnvelope": "structured-ttl",
+      "clockMilliseconds": 1800000030999,
+      "outcome": "restored"
+    },
+    {
+      "id": "at-expiry",
+      "sourceEnvelope": "structured-ttl",
+      "clockMilliseconds": 1800000031000,
+      "errorCode": "ENVELOPE_EXPIRED"
+    }
+  ],
+  "invalidTransports": [
+    {
+      "id": "padding",
+      "value": "AA==",
+      "errorCode": "INVALID_ENVELOPE"
+    },
+    {
+      "id": "whitespace",
+      "value": "AA A",
+      "errorCode": "INVALID_ENVELOPE"
+    },
+    {
+      "id": "standard-base64-alphabet",
+      "value": "+A",
+      "errorCode": "INVALID_ENVELOPE"
+    },
+    {
+      "id": "length-modulo-four-is-one",
+      "value": "A",
+      "errorCode": "INVALID_ENVELOPE"
+    },
+    {
+      "id": "nonzero-unused-four-bits",
+      "value": "AB",
+      "errorCode": "INVALID_ENVELOPE"
+    },
+    {
+      "id": "nonzero-unused-two-bits",
+      "value": "AAB",
+      "errorCode": "INVALID_ENVELOPE"
+    }
+  ],
+  "invalidEnvelopes": [
+    {
+      "id": "short-header",
+      "sourceEnvelope": "structured",
+      "mutation": {
+        "type": "truncate",
+        "length": 39
+      },
+      "errorCode": "INVALID_ENVELOPE"
+    },
+    {
+      "id": "bad-magic",
+      "sourceEnvelope": "structured",
+      "mutation": {
+        "type": "replace",
+        "offset": 0,
+        "hex": "00"
+      },
+      "errorCode": "INVALID_ENVELOPE"
+    },
+    {
+      "id": "unsupported-major-version",
+      "sourceEnvelope": "structured",
+      "mutation": {
+        "type": "replace",
+        "offset": 4,
+        "hex": "03"
+      },
+      "errorCode": "UNSUPPORTED_VERSION"
+    },
+    {
+      "id": "unsupported-minor-version",
+      "sourceEnvelope": "structured",
+      "mutation": {
+        "type": "replace",
+        "offset": 5,
+        "hex": "01"
+      },
+      "errorCode": "UNSUPPORTED_VERSION"
+    },
+    {
+      "id": "wrong-header-length",
+      "sourceEnvelope": "structured",
+      "mutation": {
+        "type": "replace",
+        "offset": 6,
+        "hex": "27"
+      },
+      "errorCode": "INVALID_ENVELOPE"
+    },
+    {
+      "id": "unknown-flags",
+      "sourceEnvelope": "structured",
+      "mutation": {
+        "type": "replace",
+        "offset": 7,
+        "hex": "02"
+      },
+      "errorCode": "INVALID_ENVELOPE"
+    },
+    {
+      "id": "full-coverage-with-edge-bytes",
+      "sourceEnvelope": "binary-full",
+      "mutation": {
+        "type": "replace",
+        "offset": 28,
+        "hex": "00000001"
+      },
+      "errorCode": "INVALID_ENVELOPE"
+    },
+    {
+      "id": "edge-coverage-with-zero-edge-bytes",
+      "sourceEnvelope": "binary-full",
+      "mutation": {
+        "type": "replace",
+        "offset": 7,
+        "hex": "01"
+      },
+      "errorCode": "INVALID_ENVELOPE"
+    },
+    {
+      "id": "overlapping-edge-coverage",
+      "sourceEnvelope": "binary-edges",
+      "mutation": {
+        "type": "replace",
+        "offset": 28,
+        "hex": "00000010"
+      },
+      "errorCode": "INVALID_ENVELOPE"
+    },
+    {
+      "id": "profile-fingerprint",
+      "sourceEnvelope": "structured",
+      "mutation": {
+        "type": "replace",
+        "offset": 8,
+        "hex": "00"
+      },
+      "errorCode": "PROFILE_MISMATCH"
+    },
+    {
+      "id": "declared-length",
+      "sourceEnvelope": "structured",
+      "mutation": {
+        "type": "replace",
+        "offset": 24,
+        "hex": "00000031"
+      },
+      "errorCode": "LENGTH_MISMATCH"
+    },
+    {
+      "id": "truncated-body",
+      "sourceEnvelope": "structured",
+      "mutation": {
+        "type": "truncate-tail",
+        "bytes": 1
+      },
+      "errorCode": "LENGTH_MISMATCH"
+    },
+    {
+      "id": "trailing-byte",
+      "sourceEnvelope": "structured",
+      "mutation": {
+        "type": "append",
+        "hex": "00"
+      },
+      "errorCode": "LENGTH_MISMATCH"
+    },
+    {
+      "id": "wrong-context",
+      "sourceEnvelope": "structured",
+      "context": [
+        "wrong"
+      ],
+      "errorCode": "MARKER_MISMATCH"
+    },
+    {
+      "id": "marker-byte",
+      "sourceEnvelope": "structured",
+      "mutation": {
+        "type": "xor",
+        "offset": 52,
+        "value": 1
+      },
+      "errorCode": "MARKER_MISMATCH"
+    },
+    {
+      "id": "ttl-binding",
+      "sourceEnvelope": "structured-ttl",
+      "mutation": {
+        "type": "xor",
+        "offset": 39,
+        "value": 1
+      },
+      "errorCode": "MARKER_MISMATCH"
+    },
+    {
+      "id": "edge-binding",
+      "sourceEnvelope": "binary-edges",
+      "mutation": {
+        "type": "xor",
+        "offset": 31,
+        "value": 1
+      },
+      "errorCode": "MARKER_MISMATCH"
+    },
+    {
+      "id": "transformed-payload",
+      "sourceEnvelope": "structured",
+      "mutation": {
+        "type": "xor",
+        "offset": 40,
+        "value": 1
+      },
+      "errorCode": "INVALID_PAYLOAD"
+    }
+  ],
+  "invalidPayloadEnvelopes": [
+    {
+      "id": "missing-metadata",
+      "payloadHex": "01",
+      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b000000010000000000000000000000008694c6c06a",
+      "errorCode": "INVALID_PAYLOAD"
+    },
+    {
+      "id": "metadata-version",
+      "payloadHex": "02017b7d",
+      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b00000004000000000000000000000000bafc09f31c00d825",
+      "errorCode": "INVALID_PAYLOAD"
+    },
+    {
+      "id": "unknown-type",
+      "payloadHex": "0104",
+      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b00000002000000000000000000000000865976147d9f",
+      "errorCode": "INVALID_PAYLOAD"
+    },
+    {
+      "id": "invalid-utf8",
+      "payloadHex": "0101ff",
+      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b000000030000000000000000000000008600d1b0aa025a",
+      "errorCode": "INVALID_PAYLOAD"
+    },
+    {
+      "id": "noncanonical-json",
+      "payloadHex": "01017b2262223a312c2261223a327d",
+      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b0000000f0000000000000000000000008600d8bd820d09b07d62e8d41895a01fc37a9d",
+      "errorCode": "INVALID_PAYLOAD"
+    },
+    {
+      "id": "compressed-truncated",
+      "payloadHex": "010300000100",
+      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b0000000600000000000000000000000086edb7c6f828e047779b",
+      "errorCode": "INVALID_PAYLOAD"
+    },
+    {
+      "id": "compressed-invalid-block",
+      "payloadHex": "01030000010000",
+      "wireHex": "4649534502002800f05f6a3a0c8b679ea3e93e524597c99b0000000700000000000000000000000086edb7c6779bdf5ff5c90d",
+      "errorCode": "INVALID_PAYLOAD"
+    }
+  ],
+  "invalid": [
+    {
+      "id": "negative-zero",
+      "kind": "ieee754",
+      "ieee754Hex": "8000000000000000",
+      "errorCode": "INVALID_INPUT"
+    },
+    {
+      "id": "nan",
+      "kind": "ieee754",
+      "ieee754Hex": "7ff8000000000000",
+      "errorCode": "INVALID_INPUT"
+    },
+    {
+      "id": "positive-infinity",
+      "kind": "ieee754",
+      "ieee754Hex": "7ff0000000000000",
+      "errorCode": "INVALID_INPUT"
+    },
+    {
+      "id": "negative-infinity",
+      "kind": "ieee754",
+      "ieee754Hex": "fff0000000000000",
+      "errorCode": "INVALID_INPUT"
+    },
+    {
+      "id": "lone-high-surrogate",
+      "kind": "json-source",
+      "inputJson": "\"\\ud800\"",
+      "errorCode": "INVALID_INPUT"
+    },
+    {
+      "id": "lone-low-surrogate",
+      "kind": "json-source",
+      "inputJson": "\"\\udc00\"",
+      "errorCode": "INVALID_INPUT"
+    },
+    {
+      "id": "lone-surrogate-property-name",
+      "kind": "json-source",
+      "inputJson": "{\"\\ud800\":true}",
+      "errorCode": "INVALID_INPUT"
+    }
+  ],
+  "invalidContext": [
+    {
+      "id": "non-array-context",
+      "inputJson": "{\"session\":\"demo\"}",
+      "errorCode": "INVALID_CONTEXT"
+    },
+    {
+      "id": "nested-context",
+      "inputJson": "[[1]]",
+      "errorCode": "INVALID_CONTEXT"
+    },
+    {
+      "id": "lone-surrogate-context",
+      "inputJson": "[\"\\ud800\"]",
+      "errorCode": "INVALID_CONTEXT"
+    }
+  ]
+}

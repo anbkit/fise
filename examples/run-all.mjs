@@ -1,10 +1,14 @@
 const examples = [
 	"basic.mjs",
 	"api-session.mjs",
+	"web-application.mjs",
+	"agent-stream.mjs",
 	"binary-file.mjs",
-	"framed.mjs",
+	"binary-restoration.mjs",
 	"backends.mjs",
-	"failure-boundaries.mjs"
+	"failure-boundaries.mjs",
+	"raw-fallback.mjs",
+	"ttl.mjs"
 ];
 
 for (const example of examples) {

@@ -17,7 +17,7 @@ for (const value of [
 	Uint8Array.from([0, 1, 127, 128, 255])
 ]) {
 	const envelope = fise.encrypt(value, context);
-	assert.ok(envelope instanceof Uint8Array);
+	assert.equal(typeof envelope === "string", !(value instanceof Uint8Array));
 	assert.deepEqual(fise.decrypt(envelope, context), value);
 }
 

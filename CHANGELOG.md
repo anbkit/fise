@@ -7,6 +7,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added optional constructor-level `ttlSeconds` for every FISE envelope.
+  Core stores one absolute wire expiry, binds it into the existing profile
+  consistency path, and throws `ENVELOPE_EXPIRED` at the exact half-open second
+  boundary across JavaScript, WASM, workers, full/range restore, and progressive
+  iterator creation. Profiles and decrypt calls require no TTL configuration.
+- Added an explicit `new Fise(profile, { strict: false })` availability mode.
+  Recoverable ordinary `encrypt`/`decrypt` failures return their exact input,
+  while the default remains strict; expiration and clock failures always throw.
+  WASM and parallel runtimes preserve the option, while range/progressive methods, backend
+  creation, and closed-pool calls remain strict.
+- Added `fise verify <profile-file>` and automatic pre-write profile
+  verification. Both exercise encrypt/decrypt round trips for text, adaptive structured
+  data, binary full/edge coverage, direct range/progressive restoration, JavaScript ↔ WASM,
+  and JavaScript ↔ workers with random synthetic positional context, plus empty
+  values with the default context.
+- Added `fise help`, command-specific `--help`/`-h`, and `fise --version`.
+- Added a packaged CLI reference covering verification, atomic publication,
+  replacement compatibility, supported files, exit behavior, and CI usage.
+- Added post-generation guidance for monorepo/shared-package and separate-repo
+  distribution, shared context contracts, and previous-profile compatibility.
+- Added repository `AGENTS.md` instructions and a packaged agent integration
+  guide covering one-time generation, destination questions, exact copying,
+  fingerprint verification, and frontend/backend ownership.
+- Added optional constructor-level binary edge coverage with a wire-bound
+  symmetric policy. `edgeBytes` is optional and defaults to 1 MiB per side. It
+  transforms metadata plus the first and last resolved bytes while leaving the
+  middle directly inspectable.
+- Added canonical unpadded Base64URL output for text and structured data while
+  retaining binary output for top-level binary input.
+- Added deterministic adaptive LZ4 for structured payloads. Core uses compressed
+  form only when its complete internal representation is smaller, bounds exact
+  restoration, and preserves canonical JSON validation.
+- Added a structured transport benchmark comparing raw and FISE JSON under
+  identity, gzip, and Brotli, and included its machine-readable result in
+  release-candidate evidence.
+- Added an actual loopback HTTP example for JSON and binary responses, a web
+  application integration guide, schema-validation guidance, client-visible
+  context rules, Profile rollout guidance, and clock-skew guidance.
+- Added an actual SSE agent-stream example that restores independently encrypted
+  text deltas, tool events, and completion events with ordered stream context.
+- Added a packed Vite production-build gate that exercises the emitted FISE
+  module worker, JavaScript, WASM, adaptive structured transport, and
+  backend-produced JSON/binary HTTP responses in Chromium.
+- Added a packaged FISE 2.0 conformance corpus with one immutable generated
+  Profile and golden canonical JSON, IEEE-754 number, UTF-8, deterministic and
+  malformed LZ4, compression-threshold, payload, Base64URL, full/edge binary,
+  range/progressive, context, TTL-boundary, malformed wire, and invalid-input
+  vectors.
+
+### Changed
+
+- Frozen structured canonicalization to the RFC 8785 representation for
+  accepted values, including raw UTF-16 property ordering, exact ECMAScript
+  binary64 number text, no Unicode normalization, and explicit rejection of
+  unpaired surrogates. FISE continues to reject negative zero.
+- Renamed the generated layout ABI field from ambiguous
+  `encodedContextLength` to `operationBindingLength`; it is normatively the
+  wire-policy-bound `B.length`, including TTL and edge bindings when present.
+- Hardened public byte, context, options, range, and progressive-signal
+  boundaries so hostile proxies, spoofed typed arrays, and detached buffers
+  produce stable `FiseError` codes; raw fallback now preserves exact input
+  identity for these ordinary-operation failures.
+- Replaced the secondary framed container with direct range and progressive
+  restoration from one ordinary FISE envelope. Selected reverse work uses
+  logical absolute offsets and skips clear middle bytes in edge mode.
+- Generated stage shifts now sample only distinct positions in the selected
+  context segment, eliminating modulo-equivalent shift parameters.
+- WASM execution traps are distinguished from memory-limit failures, and both
+  main-thread and worker paths clear used linear memory on failure as well as
+  success.
+- Clarified that generated source is a versioned artifact applications treat as
+  immutable, the imported `Profile` instance is frozen, and its fingerprint is
+  an opaque compatibility identifier rather than source attestation.
+- Generated Profile modules no longer include banner comments. Verification
+  now recognizes the canonical generated import/export shape and rejects
+  comments in generated source.
+- `fise generate <output-file>` now refuses existing files by default. Use
+  `--override` for an explicit, verified atomic replacement. New files are
+  also fully written before atomic no-clobber publication.
+- Streamlined the README into a plain-language, problem-first introduction and
+  a five-step frontend/backend adoption path with realistic API-boundary
+  examples, focused navigation, and detailed behavior delegated to dedicated
+  documents.
+- Documented the raw fallback union, plaintext/pass-through risk, lack of a
+  trusted success discriminator, and the application validation and monitoring
+  required before opting in.
+- Changed TTL capture to round the producer's partial second upward, so a
+  configured lifetime is never shortened by almost one second.
+- Split browser and Node worker startup so browser bundlers do not resolve the
+  Node builtin, and removed top-level await from the worker entry for production
+  worker-bundle compatibility.
+- Reduced synchronous binary range/full-restore copying for ordinary local byte
+  input while retaining owned snapshots for hostile, shared, progressive, and
+  asynchronous inputs.
+- Allowed progressive options as the second argument when no context is used:
+  `decryptProgressive(envelope, { chunkSize })`.
+
 ## [2.0.0] - 2026-08-26
 
 FISE 2.0 is a clean package and wire redesign. Producers and consumers must
@@ -20,14 +119,17 @@ or decoder is retained.
 - Removed string/binary profile types, default profiles, `FiseBuilder`, public
   profile definitions, manifests, rotation artifacts, time-window rules,
   conformance subpaths, and HTTP/JSON-specific encryption APIs.
-- Replaced separate string and binary wires with one strict `Uint8Array` FISE
-  2.0 envelope and one byte-only generated profile ABI.
+- Replaced separate string and binary wires with one strict binary FISE 2.0
+  envelope and one byte-only generated Profile ABI. Text and structured input
+  use canonical unpadded Base64URL as an outer JSON-safe representation.
 - Added a transformed payload metadata segment that restores either a canonical
   JSON-safe value—including strings—or raw binary bytes through the same API.
-- Replaced FISF 1.0 with FISF 2.0 and rejected every legacy version.
+- Removed the secondary FISF/framed container; full, range, and progressive
+  binary restoration use the same ordinary envelope.
 - Replaced semantic context objects and per-envelope salt with an optional
   positional scalar array. The profile derives a circular Base64URL context
-  segment, and package 2.0 envelopes are deterministic for equal inputs.
+  segment, and package 2.0 envelopes without TTL are deterministic for equal
+  inputs.
 - Removed the independent Python 1.1 reference because generated profile code,
   rather than a reproducible manifest, is now the compatibility artifact.
 
@@ -43,13 +145,16 @@ or decoder is retained.
 - Added generated context-segment offset/length parameters and passed the frozen
   positional context snapshot through mixer, offset, marker, forward, and
   reverse callbacks.
-- Added profile-bound `encryptFramed`, `decryptFramed`, `decryptRange`, and
-  `decryptProgressive` methods for full, partial, and lazy frame restoration.
+- Added profile-bound `decryptRange` and `decryptProgressive` methods for direct
+  selective and pull-driven restoration from an ordinary binary envelope.
+- Added explicit full and edge binary coverage. Edge mode lowers kernel work by
+  leaving its declared middle region untransformed and is documented as weaker
+  coverage rather than confidentiality.
 - Added `withWasm()` and retained `parallel()` runtimes compiled from the same
-  generated profile semantics, including cross-backend and frame parity tests.
-- Added FISE/FISF 2.0 specifications, generated-profile documentation, a new
+  generated Profile semantics, including cross-backend coverage/range parity tests.
+- Added the FISE 2.0 specification, generated-Profile documentation, a new
   security boundary and whitepaper, and six dependency-free examples covering
-  session-bound API, binary, framing, backends, and failure boundaries.
+  session-bound API, binary restoration, backends, and failure boundaries.
 - Added a plain-language Profile/context mental model and realistic short-lived
   session, user, tenant, connection, resource, and sequence examples.
 - Added strict TypeScript compatibility for generated `.ts` profile modules
@@ -57,12 +162,11 @@ or decoder is retained.
 
 ### Hardening
 
-- Enforced canonical JSON on restore, a 65,536-frame FISF ceiling, early
-  envelope-size checks, and bounded sequential frame scheduling for async
-  worker-backed operations.
-- Bound advertised FISF plaintext before allocation and used the outer header's
-  consistency marker to bind zero-frame containers and empty-range restores to
-  the selected profile and context.
+- Enforced canonical JSON and Base64URL on restore, early envelope-size checks,
+  canonical coverage headers, and bounded selected work for async worker-backed
+  operations.
+- Bound TTL and edge-coverage policy into the Profile/context consistency path
+  before any range or progressive content is returned.
 - Restricted generated `Profile` construction, mixer lanes, structured object
   and array prototypes, and proxy wrappers; snapshotted caller-owned bytes
   through typed-array intrinsics before profile callbacks; and made closed
@@ -70,7 +174,8 @@ or decoder is retained.
 - Made worker adapters retain fatal lifecycle state so current and future work
   rejects instead of hanging after an unexpected worker exit.
 - Added a packed real-browser smoke surface for generated profiles, WASM,
-  module workers, and FISF under a restrictive CSP with a hashed import map.
+  module workers, binary full/edge coverage, and direct restoration under a
+  restrictive CSP with a hashed import map.
 - Promoted the packed Chromium smoke to an automated CI, release-check, and
   exact-tarball release-evidence gate.
 
@@ -78,8 +183,8 @@ or decoder is retained.
 
 - Clarified that generated execution diversity targets profile-specific static
   adaptation cost and does not provide cryptographic confidentiality,
-  authenticity, integrity, authorization, expiry, replay prevention, or
-  resistance to runtime instrumentation.
+  authenticity, integrity, authorization, cryptographic expiry, revocation,
+  replay prevention, or resistance to runtime instrumentation.
 - Documented deterministic equality leakage and that omitted context-derived
   data is neither a secret key nor an authentication mechanism.
 

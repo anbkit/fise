@@ -1,3 +1,5 @@
+import { withClearedWasmMemory } from "../wasmMemory.js";
+
 interface InitRequest {
 	readonly type: "init";
 	readonly module: ArrayBuffer;
@@ -91,22 +93,22 @@ async function processRequest(request: WorkerRequest, post: PostResult): Promise
 		if (contextSegment.length === 0) throw new Error("context segment must not be empty");
 		const requiredBytes = input.length + contextSegment.length;
 		ensureMemory(kernel.memory, requiredBytes);
-		const memory = new Uint8Array(kernel.memory.buffer);
-		memory.set(input, 0);
-		memory.set(contextSegment, input.length);
-		kernel[request.operation](
-			0,
-			input.length,
-			input.length,
-			contextSegment.length,
-			request.contextState[0],
-			request.contextState[1],
-			request.contextState[2],
-			request.contextState[3],
-			request.absoluteOffset
-		);
-		const output = memory.slice(0, input.length);
-		memory.fill(0, 0, requiredBytes);
+		const output = withClearedWasmMemory(kernel.memory, requiredBytes, memory => {
+			memory.set(input, 0);
+			memory.set(contextSegment, input.length);
+			kernel![request.operation](
+				0,
+				input.length,
+				input.length,
+				contextSegment.length,
+				request.contextState[0],
+				request.contextState[1],
+				request.contextState[2],
+				request.contextState[3],
+				request.absoluteOffset
+			);
+			return memory.slice(0, input.length);
+		});
 		post({ type: "result", id, output: output.buffer }, [output.buffer]);
 	} catch (error) {
 		post({
@@ -142,7 +144,12 @@ if (typeof browserScope.postMessage === "function") {
 		);
 	};
 } else {
-	const { parentPort } = await import("node:worker_threads");
+	void connectNodeWorker();
+}
+
+async function connectNodeWorker(): Promise<void> {
+	const nodeWorkerThreads = "node:" + "worker_threads";
+	const { parentPort } = await import(nodeWorkerThreads) as typeof import("node:worker_threads");
 	if (!parentPort) throw new Error("FISE profile worker has no parent port");
 	parentPort.on("message", (request: WorkerRequest) => {
 		void processRequest(

@@ -76,8 +76,10 @@ export function generateReleaseEvidence({
 		},
 		protocolContracts: {
 			ordinaryEnvelope: "FISE 2.0",
-			framedBinary: "FISF 2.0",
-			profileArtifact: "generated Profile source"
+			structuredTransport: "canonical Base64URL with deterministic adaptive LZ4",
+			selectiveBinary: "ordinary-envelope full/edge coverage with range and progressive restoration",
+			profileArtifact: "generated Profile source",
+			conformanceCorpus: "packaged accepted and malformed canonical, LZ4, payload, context, TTL, transport, and wire vectors"
 		},
 		source: {
 			gitCommit: commit,
@@ -109,8 +111,9 @@ export function generateReleaseEvidence({
 			...unverifiedBoundaries,
 			"npm publication and registry integrity",
 			"deployed application CSP and hosting behavior",
+			"Webpack, Next.js, and framework-specific production bundling",
 			"Firefox, WebKit, mobile, embedded, and constrained-device behavior",
-			"HTTP range acquisition and incremental container input",
+			"HTTP range acquisition and incremental envelope input",
 			"cryptographic confidentiality, authenticity, and integrity"
 		])
 	};

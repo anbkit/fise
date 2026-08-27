@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const documents = [
+	"AGENTS.md",
 	"README.md",
 	"CONTRIBUTING.md",
+	"conformance/README.md",
 	"examples/README.md",
 	...readdirSync(resolve(repositoryRoot, "docs"))
 		.filter(name => name.endsWith(".md"))

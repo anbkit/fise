@@ -1,5 +1,6 @@
 import { FiseError } from "../errors.js";
-import { assertBytes, copyBytes, isBytes } from "./bytes.js";
+import { assertBytes, copyBytes, isBytes, snapshotBytes } from "./bytes.js";
+import { compressLz4Block, decompressLz4Block } from "./lz4.js";
 import type {
 	FiseContext,
 	FiseContextValue,
@@ -10,7 +11,12 @@ import type {
 const METADATA_VERSION = 1;
 const STRUCTURED_DATA = 1;
 const BINARY_DATA = 2;
-const METADATA_LENGTH = 2;
+const COMPRESSED_STRUCTURED_DATA = 3;
+export const FISE_VALUE_METADATA_LENGTH = 2;
+const COMPRESSED_STRUCTURED_HEADER_LENGTH = FISE_VALUE_METADATA_LENGTH + 4;
+const MINIMUM_COMPRESSION_INPUT = 256;
+const MAX_STRUCTURED_CONTENT_LENGTH = 512 * 1024 * 1024;
+const MAX_COMPRESSION_RATIO = 256;
 const MAX_NESTING_DEPTH = 64;
 const MAX_CONTEXT_BYTES = 64 * 1024;
 const BASE64_URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
@@ -19,37 +25,52 @@ const encoder = new TextEncoder();
 
 export function encodeValue(value: unknown): Uint8Array {
 	if (isBytes(value)) {
-		const bytes = copyBytes(value);
-		const output = new Uint8Array(METADATA_LENGTH + bytes.length);
+		const bytes = snapshotBytes(value, "binary input", "INVALID_INPUT");
+		const output = new Uint8Array(FISE_VALUE_METADATA_LENGTH + bytes.length);
 		output[0] = METADATA_VERSION;
 		output[1] = BINARY_DATA;
-		output.set(bytes, METADATA_LENGTH);
+		output.set(bytes, FISE_VALUE_METADATA_LENGTH);
 		return output;
 	}
 
 	const canonical = canonicalJson(value, "input");
 	const content = encoder.encode(canonical);
-	const output = new Uint8Array(METADATA_LENGTH + content.length);
+	if (content.length >= MINIMUM_COMPRESSION_INPUT && content.length <= 0xffff_ffff) {
+		const compressed = compressLz4Block(content);
+		if (compressed.length + 4 < content.length) {
+			const output = new Uint8Array(
+				COMPRESSED_STRUCTURED_HEADER_LENGTH + compressed.length
+			);
+			output[0] = METADATA_VERSION;
+			output[1] = COMPRESSED_STRUCTURED_DATA;
+			new DataView(output.buffer).setUint32(
+				FISE_VALUE_METADATA_LENGTH,
+				content.length,
+				false
+			);
+			output.set(compressed, COMPRESSED_STRUCTURED_HEADER_LENGTH);
+			return output;
+		}
+	}
+	const output = new Uint8Array(FISE_VALUE_METADATA_LENGTH + content.length);
 	output[0] = METADATA_VERSION;
 	output[1] = STRUCTURED_DATA;
-	output.set(content, METADATA_LENGTH);
+	output.set(content, FISE_VALUE_METADATA_LENGTH);
 	return output;
 }
 
 export function decodeValue(payload: Uint8Array): FiseValue {
 	assertBytes(payload, "restored payload", "INVALID_PAYLOAD");
-	if (payload.length < METADATA_LENGTH) {
-		throw new FiseError("INVALID_PAYLOAD", "FISE: restored payload is missing metadata.");
+	assertPayloadMetadata(payload);
+	if (payload[1] === BINARY_DATA) {
+		return copyBytes(payload.subarray(FISE_VALUE_METADATA_LENGTH));
 	}
-	if (payload[0] !== METADATA_VERSION) {
-		throw new FiseError(
-			"INVALID_PAYLOAD",
-			`FISE: unsupported payload metadata version ${payload[0]}.`
-		);
-	}
-	const content = payload.subarray(METADATA_LENGTH);
-	if (payload[1] === BINARY_DATA) return copyBytes(content);
-	if (payload[1] !== STRUCTURED_DATA) {
+	let content: Uint8Array;
+	if (payload[1] === STRUCTURED_DATA) {
+		content = payload.subarray(FISE_VALUE_METADATA_LENGTH);
+	} else if (payload[1] === COMPRESSED_STRUCTURED_DATA) {
+		content = decodeCompressedStructured(payload);
+	} else {
 		throw new FiseError("INVALID_PAYLOAD", `FISE: unknown data type ${payload[1]}.`);
 	}
 
@@ -75,6 +96,63 @@ export function decodeValue(payload: Uint8Array): FiseValue {
 		throw new FiseError("INVALID_PAYLOAD", "FISE: structured payload is not canonical JSON.");
 	}
 	return value as FiseJsonValue;
+}
+
+function decodeCompressedStructured(payload: Uint8Array): Uint8Array {
+	if (payload.length < COMPRESSED_STRUCTURED_HEADER_LENGTH + 1) {
+		throw new FiseError("INVALID_PAYLOAD", "FISE: compressed structured payload is truncated.");
+	}
+	const originalLength = new DataView(
+		payload.buffer,
+		payload.byteOffset,
+		payload.byteLength
+	).getUint32(FISE_VALUE_METADATA_LENGTH, false);
+	if (originalLength > MAX_STRUCTURED_CONTENT_LENGTH) {
+		throw new FiseError(
+			"INVALID_PAYLOAD",
+			`FISE: restored structured payload exceeds ${MAX_STRUCTURED_CONTENT_LENGTH} bytes.`
+		);
+	}
+	const compressedLength = payload.length - COMPRESSED_STRUCTURED_HEADER_LENGTH;
+	if (
+		originalLength > Math.max(
+			MINIMUM_COMPRESSION_INPUT,
+			compressedLength * MAX_COMPRESSION_RATIO
+		)
+	) {
+		throw new FiseError(
+			"INVALID_PAYLOAD",
+			"FISE: compressed structured payload exceeds the allowed expansion ratio."
+		);
+	}
+	return decompressLz4Block(
+		payload.subarray(COMPRESSED_STRUCTURED_HEADER_LENGTH),
+		originalLength
+	);
+}
+
+/** Validates the transformed prefix required by direct binary restoration. */
+export function assertBinaryPayloadMetadata(payloadPrefix: Uint8Array): void {
+	assertBytes(payloadPrefix, "restored payload metadata", "INVALID_PAYLOAD");
+	assertPayloadMetadata(payloadPrefix);
+	if (payloadPrefix[1] !== BINARY_DATA) {
+		throw new FiseError(
+			"INVALID_PAYLOAD",
+			"FISE: range and progressive restoration require a top-level binary envelope."
+		);
+	}
+}
+
+function assertPayloadMetadata(payload: Uint8Array): void {
+	if (payload.length < FISE_VALUE_METADATA_LENGTH) {
+		throw new FiseError("INVALID_PAYLOAD", "FISE: restored payload is missing metadata.");
+	}
+	if (payload[0] !== METADATA_VERSION) {
+		throw new FiseError(
+			"INVALID_PAYLOAD",
+			`FISE: unsupported payload metadata version ${payload[0]}.`
+		);
+	}
 }
 
 export interface PreparedContext {
@@ -157,7 +235,11 @@ export function canonicalJson(value: unknown, label = "value"): string {
 		return canonical;
 	} catch (error) {
 		if (error instanceof FiseError) throw error;
-		throw new FiseError("INVALID_INPUT", `FISE: unable to canonicalize ${label}.`, error);
+		throw new FiseError(
+			invalidCode(label),
+			`FISE: unable to canonicalize ${label}.`,
+			error
+		);
 	}
 }
 
@@ -171,9 +253,11 @@ function encodeCanonical(
 		throw invalidValue(label, `nesting exceeds ${MAX_NESTING_DEPTH}`);
 	}
 	if (value === null) return "null";
-	if (typeof value === "string" || typeof value === "boolean") {
+	if (typeof value === "string") {
+		assertUnicodeScalarString(value, label);
 		return JSON.stringify(value);
 	}
+	if (typeof value === "boolean") return JSON.stringify(value);
 	if (typeof value === "number") {
 		if (!Number.isFinite(value) || Object.is(value, -0)) {
 			throw invalidValue(label, "numbers must be finite and must not be negative zero");
@@ -243,7 +327,9 @@ function encodeObject(
 	if (ownKeys.some(key => typeof key === "symbol")) {
 		throw invalidValue(label, "must not contain symbol keys");
 	}
-	const keys = (ownKeys as string[]).sort();
+	const keys = ownKeys as string[];
+	for (const key of keys) assertUnicodeScalarString(key, `${label} property name`);
+	keys.sort();
 	const parts: string[] = [];
 	for (const key of keys) {
 		const descriptor = Object.getOwnPropertyDescriptor(value, key);
@@ -258,6 +344,23 @@ function encodeObject(
 		);
 	}
 	return `{${parts.join(",")}}`;
+}
+
+function assertUnicodeScalarString(value: string, label: string): void {
+	for (let index = 0; index < value.length; index++) {
+		const codeUnit = value.charCodeAt(index);
+		if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+			const next = value.charCodeAt(index + 1);
+			if (!(next >= 0xdc00 && next <= 0xdfff)) {
+				throw invalidValue(label, "must contain only valid Unicode scalar values");
+			}
+			index++;
+			continue;
+		}
+		if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+			throw invalidValue(label, "must contain only valid Unicode scalar values");
+		}
+	}
 }
 
 function isSupportedObjectPrototype(prototype: object | null): boolean {
@@ -329,8 +432,14 @@ function assertNativePlainGraph(value: unknown, label: string): void {
 }
 
 function invalidValue(label: string, detail: string): FiseError {
-	const code = label === "context" || label.startsWith("context.") || label.startsWith("context[")
+	return new FiseError(invalidCode(label), `FISE: ${label} ${detail}.`);
+}
+
+function invalidCode(label: string): "INVALID_CONTEXT" | "INVALID_INPUT" {
+	return label === "context" ||
+		label.startsWith("context.") ||
+		label.startsWith("context[") ||
+		label.startsWith("context ")
 		? "INVALID_CONTEXT"
 		: "INVALID_INPUT";
-	return new FiseError(code, `FISE: ${label} ${detail}.`);
 }

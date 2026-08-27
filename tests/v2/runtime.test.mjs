@@ -8,6 +8,8 @@ import {
 	FISE_WIRE_VERSION,
 	Profile
 } from "fise";
+import { decodeBase64Url } from "../../dist/v2/base64Url.js";
+import { FISE_MAX_ENVELOPE_LENGTH } from "../../dist/v2/envelope.js";
 import profileA from "./profile-a.generated.mjs";
 import profileB from "./profile-b.generated.mjs";
 
@@ -18,7 +20,7 @@ test("one generated profile restores structured values and binary data", () => {
 		null,
 		true,
 		42.5,
-		"plain text and a lone surrogate \ud800",
+		"plain text with Unicode: Xin chào 👋",
 		[1, "two", null, { ok: true }],
 		{ z: 3, a: { y: 2, x: 1 } },
 		new Uint8Array(),
@@ -28,7 +30,15 @@ test("one generated profile restores structured values and binary data", () => {
 	for (const value of values) {
 		const before = value instanceof Uint8Array ? value.slice() : structuredClone(value);
 		const envelope = fise.encrypt(value, context);
-		assert.ok(envelope instanceof Uint8Array);
+		assert.equal(
+			typeof envelope === "string",
+			!(value instanceof Uint8Array),
+			"transport representation must follow the top-level input type"
+		);
+		if (typeof envelope === "string") {
+			assert.match(envelope, /^[A-Za-z0-9_-]+$/);
+			assert.equal(envelope.includes("="), false);
+		}
 		assert.notStrictEqual(envelope, value);
 		assert.deepEqual(fise.decrypt(envelope, context), before);
 		assert.deepEqual(value, before, "encrypt mutated caller input");
@@ -66,9 +76,158 @@ test("wrong profile and wrong context fail closed", () => {
 	);
 });
 
+test("raw fallback is explicit, identity-preserving, and limited to ordinary operations", () => {
+	const strict = new Fise(profileA);
+	const fallback = new Fise(profileA, { strict: false });
+	const context = ["session_7f4a", "user_42"];
+	const payload = { orderId: 42, status: "ready" };
+
+	assert.equal(strict.strict, true);
+	assert.equal(fallback.strict, false);
+	assert.equal(Object.isFrozen(fallback), true);
+	const fallbackEnvelope = fallback.encrypt(payload, context);
+	assert.equal(typeof fallbackEnvelope, "string");
+	assert.notStrictEqual(fallbackEnvelope, payload);
+	assert.deepEqual(fallback.decrypt(fallbackEnvelope, context), payload);
+
+	const unsupported = new Date("2026-08-27T00:00:00.000Z");
+	assert.throws(() => strict.encrypt(unsupported), FiseError);
+	assert.strictEqual(fallback.encrypt(unsupported), unsupported);
+
+	const invalidContextPayload = { raw: "invalid context" };
+	assert.strictEqual(
+		fallback.encrypt(invalidContextPayload, { sessionId: "not positional" }),
+		invalidContextPayload
+	);
+
+	const rawResponse = { raw: "not an envelope" };
+	assert.strictEqual(fallback.decrypt(rawResponse, context), rawResponse);
+	const rawBytes = Uint8Array.of(1, 2, 3);
+	assert.strictEqual(fallback.decrypt(rawBytes, context), rawBytes);
+
+	const envelope = strict.encrypt(payload, context);
+	assert.strictEqual(
+		fallback.decrypt(envelope, ["another-session", "user_42"]),
+		envelope
+	);
+
+	assert.throws(
+		() => fallback.decryptRange(new Uint8Array(), { start: 0, endExclusive: 0 }),
+		FiseError
+	);
+});
+
+test("Fise options are snapshotted and reject ambiguous values", () => {
+	assert.equal(new Fise(profileA, {}).strict, true);
+	assert.equal(new Fise(profileA, { strict: undefined }).strict, true);
+	assert.equal(new Fise(profileA, { strict: false }).strict, false);
+
+	const accessor = {};
+	Object.defineProperty(accessor, "strict", { get: () => false });
+	for (const options of [
+		null,
+		[],
+		{ strict: "false" },
+		{ fallback: true },
+		{ [Symbol("strict")]: false },
+		accessor
+	]) {
+		assert.throws(
+			() => new Fise(profileA, options),
+			(error) => error instanceof FiseError && error.code === "INVALID_INPUT"
+		);
+	}
+
+	const options = { strict: false };
+	const fise = new Fise(profileA, options);
+	options.strict = true;
+	assert.equal(fise.strict, false);
+
+	const failure = new Error("options ownKeys trap");
+	assert.throws(
+		() => new Fise(profileA, new Proxy({}, { ownKeys: () => { throw failure; } })),
+		(error) =>
+			error instanceof FiseError &&
+			error.code === "INVALID_INPUT" &&
+			error.cause === failure
+	);
+});
+
+test("byte boundaries reject unreadable wrappers without leaking engine errors", () => {
+	const strict = new Fise(profileA);
+	const fallback = new Fise(profileA, { strict: false });
+	const context = ["byte-boundary"];
+	const envelope = strict.encrypt(Uint8Array.of(7, 8, 9), context);
+	const crossRealmBytes = runInNewContext("Uint8Array.from([1, 2, 3])");
+	assert.deepEqual(
+		strict.decrypt(strict.encrypt(crossRealmBytes, context), context),
+		Uint8Array.of(1, 2, 3)
+	);
+
+	const fake = { [Symbol.toStringTag]: "Uint8Array" };
+	const proxied = new Proxy(envelope, {});
+	const revoked = Proxy.revocable(envelope, {});
+	revoked.revoke();
+	const detached = Uint8Array.of(4, 5, 6);
+	structuredClone(detached.buffer, { transfer: [detached.buffer] });
+
+	for (const value of [fake, proxied, revoked.proxy, detached]) {
+		assert.throws(
+			() => strict.decrypt(value, context),
+			(error) => error instanceof FiseError && error.code === "INVALID_ENVELOPE"
+		);
+		assert.strictEqual(fallback.decrypt(value, context), value);
+	}
+	assert.throws(
+		() => strict.encrypt(detached, context),
+		(error) => error instanceof FiseError && error.code === "INVALID_INPUT"
+	);
+	assert.strictEqual(fallback.encrypt(detached, context), detached);
+});
+
+test("context inspection and generated kernel failures use operation-specific codes", () => {
+	const fise = new Fise(profileA);
+	const contextFailure = new Error("context ownKeys trap");
+	const hostileContext = new Proxy([], { ownKeys: () => { throw contextFailure; } });
+	assert.throws(
+		() => fise.encrypt("value", hostileContext),
+		(error) =>
+			error instanceof FiseError &&
+			error.code === "INVALID_CONTEXT" &&
+			error.cause === contextFailure
+	);
+
+	const conditional = Profile.generated(
+		"0123456789abcdef0123456789abcdef",
+		0,
+		12,
+		() => [0, 0, 0, 0],
+		() => 0,
+		() => 0,
+		(input, _segment, _state, _offset, context) => {
+			if (context[0] === "fail-forward") throw new Error("forward failed");
+			return input.slice();
+		},
+		(input, _segment, _state, _offset, context) => {
+			if (context[0] === "fail-reverse") throw new Error("reverse failed");
+			return input.slice();
+		}
+	);
+	const conditionalFise = new Fise(conditional);
+	assert.throws(
+		() => conditionalFise.encrypt("value", ["fail-forward"]),
+		(error) => error instanceof FiseError && error.code === "INVALID_PROFILE"
+	);
+	const reverseEnvelope = conditionalFise.encrypt("value", ["fail-reverse"]);
+	assert.throws(
+		() => conditionalFise.decrypt(reverseEnvelope, ["fail-reverse"]),
+		(error) => error instanceof FiseError && error.code === "INVALID_CIPHERTEXT"
+	);
+});
+
 test("wire 2.0 rejects legacy versions, truncation, and trailing data", () => {
 	const fise = new Fise(profileA);
-	const envelope = fise.encrypt("strict");
+	const envelope = wireOf(fise.encrypt("strict"));
 	const legacy = envelope.slice();
 	legacy[4] = 1;
 	assert.throws(
@@ -99,17 +258,17 @@ test("payload metadata versions and data types are strict", () => {
 		(input) => input.slice()
 	);
 	const fise = new Fise(passthrough);
-	const envelope = fise.encrypt("metadata");
+	const envelope = wireOf(fise.encrypt("metadata"));
 
 	const badVersion = envelope.slice();
-	badVersion[36] = 99;
+	badVersion[44] = 99;
 	assert.throws(
 		() => fise.decrypt(badVersion),
 		(error) => error instanceof FiseError && error.code === "INVALID_PAYLOAD"
 	);
 
 	const badType = envelope.slice();
-	badType[37] = 99;
+	badType[45] = 99;
 	assert.throws(
 		() => fise.decrypt(badType),
 		(error) => error instanceof FiseError && error.code === "INVALID_PAYLOAD"
@@ -128,9 +287,9 @@ test("structured payloads must retain their canonical JSON representation", () =
 		(input) => input.slice()
 	);
 	const fise = new Fise(passthrough);
-	const envelope = fise.encrypt({ a: 1, b: 2 });
+	const envelope = wireOf(fise.encrypt({ a: 1, b: 2 }));
 	const nonCanonical = new TextEncoder().encode('{"b":2,"a":1}');
-	envelope.set(nonCanonical, 38);
+	envelope.set(nonCanonical, 46);
 	assert.throws(
 		() => fise.decrypt(envelope),
 		(error) => error instanceof FiseError && error.code === "INVALID_PAYLOAD"
@@ -181,6 +340,9 @@ test("structured data and positional context reject ambiguous JavaScript values"
 		Number.NaN,
 		Number.POSITIVE_INFINITY,
 		-0,
+		"lone high surrogate \ud800",
+		"lone low surrogate \udc00",
+		{ ["invalid key \ud800"]: true },
 		1n,
 		new Date(),
 		cycle,
@@ -207,12 +369,15 @@ test("structured data and positional context reject ambiguous JavaScript values"
 	Object.setPrototypeOf(customPrototypeContext, customContextPrototype);
 	for (const context of [
 		{},
+		{ ["invalid key \ud800"]: true },
 		"tenant",
 		1,
 		[{}],
 		[[1]],
 		[Number.NaN],
 		[-0],
+		["lone high surrogate \ud800"],
+		["lone low surrogate \udc00"],
 		sparse,
 		accessor,
 		customProperty,
@@ -295,6 +460,7 @@ test("Profile and Fise instances are immutable and profile-bound", () => {
 	assert.ok(Object.isFrozen(profileA));
 	assert.ok(Object.isFrozen(fise));
 	assert.equal(fise.profile, profileA);
+	assert.equal(fise.strict, true);
 	assert.throws(() => new Fise({}), FiseError);
 	assert.throws(
 		() => new Profile({}),
@@ -325,7 +491,7 @@ test("generated context mixers must return four dense own uint32 lanes", () => {
 	);
 });
 
-test("decrypt validates and snapshots the envelope before context callbacks", () => {
+test("decrypt owns hostile byte subclasses without invoking their overrides", () => {
 	const fise = new Fise(profileA);
 	assert.throws(
 		() => fise.decrypt(new Uint8Array(), {}),
@@ -341,10 +507,55 @@ test("decrypt validates and snapshots the envelope before context callbacks", ()
 			throw new Error("caller-owned subarray must not run");
 		}
 	}
-	const envelope = new HostileEnvelope(fise.encrypt("owned bytes"));
+	const envelope = new HostileEnvelope(wireOf(fise.encrypt("owned bytes")));
 	assert.equal(fise.decrypt(envelope), "owned bytes");
 	const binary = new HostileEnvelope([1, 2, 3]);
-	assert.deepEqual(fise.decrypt(fise.encrypt(binary)), Uint8Array.of(1, 2, 3));
-	const framed = new HostileEnvelope(fise.encryptFramed(binary, [], { frameSize: 2 }));
-	assert.deepEqual(fise.decryptFramed(framed), Uint8Array.of(1, 2, 3));
+	const binaryEnvelope = new HostileEnvelope(fise.encrypt(binary));
+	assert.deepEqual(fise.decrypt(binaryEnvelope), Uint8Array.of(1, 2, 3));
+	assert.deepEqual(
+		fise.decryptRange(binaryEnvelope, { start: 1, endExclusive: 3 }),
+		Uint8Array.of(2, 3)
+	);
 });
+
+test("structured transport uses strict canonical unpadded Base64URL", () => {
+	const strict = new Fise(profileA);
+	const fallback = new Fise(profileA, { strict: false });
+	const envelope = strict.encrypt({ ok: true });
+	assert.equal(typeof envelope, "string");
+	assert.match(envelope, /^[A-Za-z0-9_-]+$/);
+	assert.equal(envelope.includes("="), false);
+	assert.deepEqual(strict.decrypt(wireOf(envelope)), { ok: true });
+
+	for (const invalid of [
+		`${envelope}=`,
+		`${envelope}\n`,
+		"A",
+		"AB",
+		"AAB",
+		"+/"
+	]) {
+		assert.throws(
+			() => strict.decrypt(invalid),
+			(error) =>
+				error instanceof FiseError &&
+				error.code === "INVALID_ENVELOPE"
+		);
+		assert.strictEqual(fallback.decrypt(invalid), invalid);
+	}
+	assert.throws(
+		() => strict.decrypt(42),
+		(error) => error instanceof FiseError && error.code === "INVALID_ENVELOPE"
+	);
+	assert.deepEqual(decodeBase64Url("AAA", 2), Uint8Array.of(0, 0));
+	assert.throws(
+		() => decodeBase64Url("AAAA", 2),
+		(error) => error instanceof FiseError && error.code === "ENVELOPE_LIMIT"
+	);
+});
+
+function wireOf(envelope) {
+	return typeof envelope === "string"
+		? decodeBase64Url(envelope, FISE_MAX_ENVELOPE_LENGTH)
+		: envelope;
+}

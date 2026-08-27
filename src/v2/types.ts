@@ -1,4 +1,8 @@
-/** JSON values accepted by FISE's structured-data codec. */
+/**
+ * JSON values accepted by FISE's structured-data codec.
+ * Runtime strings must contain valid Unicode scalar values. Numbers use
+ * finite IEEE-754 binary64 semantics and exclude negative zero.
+ */
 export type FiseJsonValue =
 	| null
 	| boolean
@@ -10,7 +14,13 @@ export type FiseJsonValue =
 /** Values accepted by the unified FISE 2.0 API. */
 export type FiseValue = FiseJsonValue | Uint8Array;
 
-/** One positional, JSON-safe scalar supplied as external transformation context. */
+/** Transport representation accepted by decrypt. */
+export type FiseEncrypted = string | Uint8Array;
+
+/** Encrypt returns Base64URL for structured data and bytes for top-level binary. */
+export type FiseEncryptedResult<Value> = Value extends Uint8Array ? Uint8Array : string;
+
+/** One positional scalar using the same string/number rules as structured data. */
 export type FiseContextValue = null | boolean | number | string;
 
 /** Opaque positional context supplied by the application. */
@@ -37,17 +47,14 @@ export type FiseValueInput<Value> = Value extends Uint8Array
 	? Value
 	: FiseStructuredInput<Value>;
 
-/** Half-open byte range used by framed binary restoration. */
+/** Half-open plaintext byte range used by direct binary restoration. */
 export interface FiseRange {
 	readonly start: number;
 	readonly endExclusive: number;
 }
 
-export interface FiseFramedOptions {
-	/** Independent plaintext bytes per frame. Defaults to 256 KiB. */
-	readonly frameSize?: number;
-}
-
 export interface FiseProgressiveOptions {
+	/** Plaintext bytes restored per pull. Defaults to 256 KiB. */
+	readonly chunkSize?: number;
 	readonly signal?: AbortSignal;
 }

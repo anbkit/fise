@@ -1,8 +1,12 @@
-import { FiseError } from "../errors.js";
+import { FiseError, type FiseErrorCode } from "../errors.js";
 
 const typedArrayPrototype = Object.getPrototypeOf(Uint8Array.prototype) as object;
 const typedArrayLength = Object.getOwnPropertyDescriptor(typedArrayPrototype, "length")?.get ??
 	missingTypedArrayIntrinsic("length");
+const typedArrayBuffer = Object.getOwnPropertyDescriptor(typedArrayPrototype, "buffer")?.get ??
+	missingTypedArrayIntrinsic("buffer");
+const typedArrayByteOffset = Object.getOwnPropertyDescriptor(typedArrayPrototype, "byteOffset")?.get ??
+	missingTypedArrayIntrinsic("byteOffset");
 const typedArrayTag = Object.getOwnPropertyDescriptor(
 	typedArrayPrototype,
 	Symbol.toStringTag
@@ -20,14 +24,159 @@ export function isBytes(value: unknown): value is Uint8Array {
 export function assertBytes(
 	value: unknown,
 	label: string,
-	code:
-		| "INVALID_INPUT"
-		| "INVALID_ENVELOPE"
-		| "INVALID_PROFILE"
-		| "INVALID_PAYLOAD"
+	code: FiseErrorCode
 ): asserts value is Uint8Array {
 	if (!isBytes(value)) {
 		throw new FiseError(code, `FISE: ${label} must be a Uint8Array.`);
+	}
+}
+
+export function checkedByteLength(
+	value: unknown,
+	label: string,
+	code: FiseErrorCode
+): number {
+	assertBytes(value, label, code);
+	try {
+		return byteLengthOf(value);
+	} catch (error) {
+		throw new FiseError(code, `FISE: ${label} is not readable byte data.`, error);
+	}
+}
+
+export function snapshotBytes(
+	value: unknown,
+	label: string,
+	code: FiseErrorCode
+): Uint8Array {
+	const length = checkedByteLength(value, label, code);
+	return snapshotBytesAtLength(value, length, label, code);
+}
+
+export function snapshotBytesAtLength(
+	value: unknown,
+	expectedLength: number,
+	label: string,
+	code: FiseErrorCode
+): Uint8Array {
+	assertBytes(value, label, code);
+	if (checkedByteLength(value, label, code) !== expectedLength) {
+		throw new FiseError(code, `FISE: ${label} changed before it could be snapshotted.`);
+	}
+	try {
+		const output = new Uint8Array(expectedLength);
+		Uint8Array.prototype.set.call(output, value);
+		if (byteLengthOf(value) !== expectedLength) {
+			throw new FiseError(code, `FISE: ${label} changed while it was being snapshotted.`);
+		}
+		return output;
+	} catch (error) {
+		if (error instanceof FiseError) throw error;
+		throw new FiseError(code, `FISE: unable to snapshot ${label}.`, error);
+	}
+}
+
+export function snapshotBytePrefix(
+	value: unknown,
+	prefixLength: number,
+	label: string,
+	code: FiseErrorCode
+): Uint8Array {
+	const length = checkedByteLength(value, label, code);
+	if (!Number.isSafeInteger(prefixLength) || prefixLength < 0 || prefixLength > length) {
+		throw new FiseError(code, `FISE: ${label} is shorter than the required prefix.`);
+	}
+	try {
+		const buffer = Reflect.apply(typedArrayBuffer, value, []) as ArrayBufferLike;
+		const byteOffset = Reflect.apply(typedArrayByteOffset, value, []) as number;
+		const source = new Uint8Array(buffer, byteOffset, prefixLength);
+		const output = new Uint8Array(prefixLength);
+		Uint8Array.prototype.set.call(output, source);
+		if (byteLengthOf(value as Uint8Array) !== length) {
+			throw new FiseError(code, `FISE: ${label} changed while its prefix was snapshotted.`);
+		}
+		return output;
+	} catch (error) {
+		if (error instanceof FiseError) throw error;
+		throw new FiseError(code, `FISE: unable to snapshot ${label} prefix.`, error);
+	}
+}
+
+export function snapshotByteRangeAtLength(
+	value: unknown,
+	expectedLength: number,
+	start: number,
+	endExclusive: number,
+	label: string,
+	code: FiseErrorCode
+): Uint8Array {
+	const output = new Uint8Array(assertByteRange(
+		value,
+		expectedLength,
+		start,
+		endExclusive,
+		label,
+		code
+	));
+	copyByteRangeAtLength(
+		value,
+		expectedLength,
+		start,
+		endExclusive,
+		output,
+		0,
+		label,
+		code
+	);
+	return output;
+}
+
+export function copyByteRangeAtLength(
+	value: unknown,
+	expectedLength: number,
+	start: number,
+	endExclusive: number,
+	output: Uint8Array,
+	outputOffset: number,
+	label: string,
+	code: FiseErrorCode
+): void {
+	const rangeLength = assertByteRange(
+		value,
+		expectedLength,
+		start,
+		endExclusive,
+		label,
+		code
+	);
+	if (
+		!Number.isSafeInteger(outputOffset) ||
+		outputOffset < 0 ||
+		outputOffset > output.length - rangeLength
+	) {
+		throw new FiseError(code, `FISE: ${label} copy destination is invalid.`);
+	}
+	try {
+		const buffer = Reflect.apply(typedArrayBuffer, value, []) as ArrayBufferLike;
+		const byteOffset = Reflect.apply(typedArrayByteOffset, value, []) as number;
+		const source = new Uint8Array(buffer, byteOffset + start, rangeLength);
+		Uint8Array.prototype.set.call(output, source, outputOffset);
+		if (byteLengthOf(value as Uint8Array) !== expectedLength) {
+			throw new FiseError(code, `FISE: ${label} changed while its range was copied.`);
+		}
+	} catch (error) {
+		if (error instanceof FiseError) throw error;
+		throw new FiseError(code, `FISE: unable to copy ${label} range.`, error);
+	}
+}
+
+export function canBorrowBytesForSynchronousRead(value: unknown): value is Uint8Array {
+	if (!isBytes(value)) return false;
+	try {
+		const buffer = Reflect.apply(typedArrayBuffer, value, []) as ArrayBufferLike;
+		return Object.getPrototypeOf(value) === Uint8Array.prototype && buffer instanceof ArrayBuffer;
+	} catch {
+		return false;
 	}
 }
 
@@ -73,4 +222,28 @@ export function bytesToHex(bytes: Uint8Array): string {
 	let output = "";
 	for (const byte of bytes) output += byte.toString(16).padStart(2, "0");
 	return output;
+}
+
+function assertByteRange(
+	value: unknown,
+	expectedLength: number,
+	start: number,
+	endExclusive: number,
+	label: string,
+	code: FiseErrorCode
+): number {
+	assertBytes(value, label, code);
+	if (checkedByteLength(value, label, code) !== expectedLength) {
+		throw new FiseError(code, `FISE: ${label} changed before its range could be copied.`);
+	}
+	if (
+		!Number.isSafeInteger(start) ||
+		!Number.isSafeInteger(endExclusive) ||
+		start < 0 ||
+		endExclusive < start ||
+		endExclusive > expectedLength
+	) {
+		throw new FiseError(code, `FISE: ${label} range is invalid.`);
+	}
+	return endExclusive - start;
 }

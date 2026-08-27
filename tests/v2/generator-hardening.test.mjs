@@ -25,6 +25,7 @@ import {
 	generateProfileSource,
 	writeGeneratedProfile
 } from "../../dist/v2/generator.js";
+import { setFiseClockForTesting } from "../../dist/v2/fise.js";
 import { runtimeOf } from "../../dist/v2/profile.js";
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
@@ -167,6 +168,62 @@ test("every generated numeric parameter affects source identity", () => {
 	}
 });
 
+test("generated segment shifts use distinct context lanes and change kernel semantics", async () => {
+	const temporaryDirectory = mkdtempSync(join(testDirectory, ".generator-segment-shift-"));
+	const trace = new Map();
+	const fixed = new Map([["integer:extraStageCount", 3]]);
+	try {
+		const baseline = generateProfileSource({
+			entropy: deterministicEntropy(0x510e_527f, { overrides: fixed, trace })
+		});
+		const contextSegmentLength = trace.get("integer:contextSegmentLength")?.value;
+		assert.ok(Number.isInteger(contextSegmentLength));
+		const shifts = [...trace.entries()].filter(([key]) => key.endsWith(".segmentShift"));
+		assert.ok(shifts.length >= 4);
+		for (const [, descriptor] of shifts) {
+			assert.equal(descriptor.minimum, 0);
+			assert.equal(descriptor.maximum, contextSegmentLength);
+			assert.ok(descriptor.value >= 0 && descriptor.value < contextSegmentLength);
+		}
+
+		const [shiftKey, shiftDescriptor] = shifts[0];
+		const overrides = new Map(fixed);
+		overrides.set(shiftKey, mutateEntropyValue(shiftDescriptor));
+		const mutated = generateProfileSource({
+			entropy: deterministicEntropy(0x510e_527f, { overrides })
+		});
+		const baselinePath = join(temporaryDirectory, "baseline.mjs");
+		const mutatedPath = join(temporaryDirectory, "mutated.mjs");
+		writeFileSync(baselinePath, baseline.source, "utf8");
+		writeFileSync(mutatedPath, mutated.source, "utf8");
+		const baselineRuntime = runtimeOf((await import(pathToFileURL(baselinePath).href)).default);
+		const mutatedRuntime = runtimeOf((await import(pathToFileURL(mutatedPath).href)).default);
+		const input = sampleBytes(1_027, 29);
+		const contextSegment = sampleBytes(contextSegmentLength, 71);
+		const contextState = [0x1020_3040, 0x5566_7788, 0x90ab_cdef, 0xfedc_ba98];
+		const context = Object.freeze(["segment-shift", 29]);
+		assert.notDeepEqual(
+			baselineRuntime.forward(
+				input,
+				contextSegment,
+				contextState,
+				97,
+				context
+			),
+			mutatedRuntime.forward(
+				input,
+				contextSegment,
+				contextState,
+				97,
+				context
+			),
+			"changing segmentShift did not change forward kernel semantics"
+		);
+	} finally {
+		rmSync(temporaryDirectory, { recursive: true, force: true });
+	}
+});
+
 test("generated modules retain a minimal static source policy", () => {
 	const fingerprints = new Set();
 	const stageCounts = new Set();
@@ -205,15 +262,23 @@ test("100 deterministic profiles interoperate across JS, WASM, and sampled worke
 
 			const outputPath = join(temporaryDirectory, `profile-${index}.mjs`);
 			writeFileSync(outputPath, generated.source, "utf8");
-			const profile = (await import(pathToFileURL(outputPath).href)).default;
-			assert.ok(profile instanceof Profile);
-			const javascript = new Fise(profile);
-			const wasm = isWasmSupported() ? await javascript.withWasm() : undefined;
+				const profile = (await import(pathToFileURL(outputPath).href)).default;
+				assert.ok(profile instanceof Profile);
+				const javascript = new Fise(profile);
+				const expiring = new Fise(profile, { ttlSeconds: 60 });
+				const fixedNow = 1_800_000_000_000 + index * 1_000;
+				setFiseClockForTesting(javascript, () => fixedNow);
+				setFiseClockForTesting(expiring, () => fixedNow);
+				const wasm = isWasmSupported() ? await javascript.withWasm() : undefined;
 			const context = [
 				index,
 				index % 2 === 0 ? 0 : 0xffff_ffff,
-				index % 3 === 0
-			];
+					index % 3 === 0
+				];
+				const ttlInput = sampleBytes(97 + (index % 13), index);
+				const ttlEnvelope = expiring.encrypt(ttlInput, context);
+				assert.deepEqual(javascript.decrypt(ttlEnvelope, context), ttlInput);
+				if (wasm) assert.deepEqual(wasm.decrypt(ttlEnvelope, context), ttlInput);
 
 			for (const length of [0, 1, 31 + (index % 5), 257 + (index % 17)]) {
 				const input = sampleBytes(length, index);
@@ -241,8 +306,9 @@ test("100 deterministic profiles interoperate across JS, WASM, and sampled worke
 					workerCount: 2,
 					minimumParallelBytes: 0
 				});
-				try {
-					const input = sampleBytes(4_097 + index, index);
+					try {
+						const input = sampleBytes(4_097 + index, index);
+						assert.deepEqual(await parallel.decrypt(ttlEnvelope, context), ttlInput);
 					assert.deepEqual(
 						await parallel.decrypt(javascript.encrypt(input, context), context),
 						input
@@ -262,7 +328,7 @@ test("100 deterministic profiles interoperate across JS, WASM, and sampled worke
 	}
 });
 
-test("atomic writer preserves the destination and removes its temporary file", () => {
+test("atomic writer preserves the destination and removes its temporary file", async () => {
 	const temporaryDirectory = mkdtempSync(join(testDirectory, ".generator-write-failure-"));
 	const outputPath = join(temporaryDirectory, "profile.mjs");
 	const previousSource = "export default 'previous';\n";
@@ -271,14 +337,20 @@ test("atomic writer preserves the destination and removes its temporary file", (
 	let temporaryPath;
 	let removedPath;
 	try {
-		assert.throws(
-			() => writeGeneratedProfile(outputPath, {
+		await assert.rejects(
+			writeGeneratedProfile(outputPath, {
 				entropy: deterministicEntropy(0xbb67_ae85),
+				override: true,
+				verifySource: fastVerification,
 				fileSystem: {
+					exists: () => true,
 					createDirectory: path => mkdirSync(path, { recursive: true }),
 					writeExclusive: (path, source) => {
 						temporaryPath = path;
 						writeFileSync(path, source, { encoding: "utf8", flag: "wx" });
+					},
+					publishExclusive() {
+						assert.fail("override must replace rather than publish exclusively");
 					},
 					replace: () => {
 						throw failure;
@@ -303,7 +375,87 @@ test("atomic writer preserves the destination and removes its temporary file", (
 	}
 });
 
-test("atomic writer never deletes a colliding temporary file", () => {
+test("atomic create removes a partial temporary write without publishing it", async () => {
+	const temporaryDirectory = mkdtempSync(join(testDirectory, ".generator-partial-create-"));
+	const outputPath = join(temporaryDirectory, "profile.mjs");
+	const writeFailure = Object.assign(new Error("disk full"), { code: "ENOSPC" });
+	let temporaryPath;
+	try {
+		await assert.rejects(
+			writeGeneratedProfile(outputPath, {
+				entropy: deterministicEntropy(0x243f_6a88),
+				verifySource: fastVerification,
+				fileSystem: {
+					exists: () => false,
+					createDirectory: path => mkdirSync(path, { recursive: true }),
+					writeExclusive: (path, source) => {
+						temporaryPath = path;
+						writeFileSync(path, source.slice(0, 32), { encoding: "utf8", flag: "wx" });
+						throw writeFailure;
+					},
+					publishExclusive() {
+						assert.fail("a partial temporary file must not be published");
+					},
+					replace() {
+						assert.fail("create must not replace the destination");
+					},
+					remove: path => rmSync(path, { force: true })
+				}
+			}),
+			(error) =>
+				error instanceof FiseError &&
+				error.code === "INVALID_INPUT" &&
+				error.cause === writeFailure
+		);
+		assert.equal(existsSync(outputPath), false);
+		assert.equal(existsSync(temporaryPath), false);
+		assert.deepEqual(readdirNames(temporaryDirectory), []);
+	} finally {
+		rmSync(temporaryDirectory, { recursive: true, force: true });
+	}
+});
+
+test("atomic create preserves a destination won by a concurrent writer", async () => {
+	const temporaryDirectory = mkdtempSync(join(testDirectory, ".generator-race-create-"));
+	const outputPath = join(temporaryDirectory, "profile.mjs");
+	const raceSource = "concurrent writer\n";
+	let temporaryPath;
+	try {
+		await assert.rejects(
+			writeGeneratedProfile(outputPath, {
+				entropy: deterministicEntropy(0x85a3_08d3),
+				verifySource: fastVerification,
+				fileSystem: {
+					exists: () => false,
+					createDirectory: path => mkdirSync(path, { recursive: true }),
+					writeExclusive: (path, source) => {
+						temporaryPath = path;
+						writeFileSync(path, source, { encoding: "utf8", flag: "wx" });
+					},
+					publishExclusive: (_sourcePath, destinationPath) => {
+						writeFileSync(destinationPath, raceSource, { encoding: "utf8", flag: "wx" });
+						throw Object.assign(new Error("destination exists"), { code: "EEXIST" });
+					},
+					replace() {
+						assert.fail("create must not replace the destination");
+					},
+					remove: path => rmSync(path, { force: true })
+				}
+			}),
+			(error) =>
+				error instanceof FiseError &&
+				error.code === "INVALID_INPUT" &&
+				/already exists/.test(error.message)
+		);
+		assert.equal(readFileSync(outputPath, "utf8"), raceSource);
+		assert.equal(existsSync(temporaryPath), false);
+		assert.deepEqual(readdirNames(temporaryDirectory), ["profile.mjs"]);
+	} finally {
+		rmSync(temporaryDirectory, { recursive: true, force: true });
+	}
+});
+
+test("atomic writer never deletes a colliding temporary file", async () => {
 	const temporaryDirectory = mkdtempSync(join(testDirectory, ".generator-collision-"));
 	const outputPath = join(temporaryDirectory, "profile.mjs");
 	const entropy = deterministicEntropy(0xa54f_f53a);
@@ -312,8 +464,12 @@ test("atomic writer never deletes a colliding temporary file", () => {
 	writeFileSync(outputPath, "old destination\n", "utf8");
 	writeFileSync(collidingPath, "another writer\n", "utf8");
 	try {
-		assert.throws(
-			() => writeGeneratedProfile(outputPath, { entropy }),
+		await assert.rejects(
+			writeGeneratedProfile(outputPath, {
+				entropy,
+				override: true,
+				verifySource: fastVerification
+			}),
 			(error) =>
 				error instanceof FiseError &&
 				error.code === "INVALID_INPUT" &&
@@ -326,17 +482,23 @@ test("atomic writer never deletes a colliding temporary file", () => {
 	}
 });
 
-test("write and cleanup failures preserve the original error", () => {
+test("write and cleanup failures preserve the original error", async () => {
 	const writeFailure = Object.assign(new Error("write denied"), { code: "EACCES" });
 	const cleanupFailure = new Error("cleanup denied");
 	let cleanupCalls = 0;
-	assert.throws(
-		() => writeGeneratedProfile("profile.mjs", {
+	await assert.rejects(
+		writeGeneratedProfile("profile.mjs", {
 			entropy: deterministicEntropy(0x510e_527f),
+			override: true,
+			verifySource: fastVerification,
 			fileSystem: {
+				exists: () => false,
 				createDirectory() {},
 				writeExclusive() {
 					throw writeFailure;
+				},
+				publishExclusive() {
+					assert.fail("publish must not run after a write failure");
 				},
 				replace() {
 					assert.fail("replace must not run after a write failure");
@@ -355,7 +517,7 @@ test("write and cleanup failures preserve the original error", () => {
 	assert.equal(cleanupCalls, 1);
 });
 
-test("temporary-path entropy fails before filesystem mutation", () => {
+test("temporary-path entropy fails before filesystem mutation", async () => {
 	let fileSystemCalls = 0;
 	const failure = new Error("temporary entropy unavailable");
 	const base = deterministicEntropy(0x1f83_d9ab);
@@ -366,14 +528,22 @@ test("temporary-path entropy fails before filesystem mutation", () => {
 			return base.bytes(label, length);
 		}
 	};
-	assert.throws(
-		() => writeGeneratedProfile("profile.mjs", {
+	await assert.rejects(
+		writeGeneratedProfile("profile.mjs", {
 			entropy,
+			override: true,
+			verifySource: fastVerification,
 			fileSystem: {
+				exists() {
+					return false;
+				},
 				createDirectory() {
 					fileSystemCalls++;
 				},
 				writeExclusive() {
+					fileSystemCalls++;
+				},
+				publishExclusive() {
 					fileSystemCalls++;
 				},
 				replace() {
@@ -390,6 +560,32 @@ test("temporary-path entropy fails before filesystem mutation", () => {
 			error.cause === failure
 	);
 	assert.equal(fileSystemCalls, 0);
+});
+
+test("verification failure occurs before filesystem mutation", async () => {
+	const verificationFailure = new Error("profile did not roundtrip");
+	let mutationCalls = 0;
+	await assert.rejects(
+		writeGeneratedProfile("profile.mjs", {
+			entropy: deterministicEntropy(0x5be0_cd19),
+			verifySource: async () => {
+				throw verificationFailure;
+			},
+			fileSystem: {
+				exists: () => false,
+				createDirectory: () => mutationCalls++,
+				writeExclusive: () => mutationCalls++,
+				publishExclusive: () => mutationCalls++,
+				replace: () => mutationCalls++,
+				remove: () => mutationCalls++
+			}
+		}),
+		(error) =>
+			error instanceof FiseError &&
+			error.code === "INVALID_PROFILE" &&
+			error.cause === verificationFailure
+	);
+	assert.equal(mutationCalls, 0);
 });
 
 function boundaryEntropy(boundary) {
@@ -465,6 +661,7 @@ function mutateEntropyValue(descriptor) {
 }
 
 function assertGeneratedSourcePolicy(source, fingerprint) {
+	assert.doesNotMatch(source, /\/\/|\/\*/, "generated source contains a comment");
 	const sourceFile = ts.createSourceFile(
 		"profile.generated.mjs",
 		source,
@@ -549,4 +746,13 @@ function bytesToHex(bytes) {
 
 function readdirNames(path) {
 	return readdirSync(path).sort();
+}
+
+async function fastVerification(source) {
+	const fingerprint = source.match(/"([0-9a-f]{32})",/)?.[1];
+	assert.ok(fingerprint, "generated profile fingerprint is present");
+	return Object.freeze({
+		fingerprint,
+		checks: Object.freeze(["test encrypt/decrypt"])
+	});
 }

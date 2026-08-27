@@ -45,18 +45,55 @@ try {
 	const evidence = await page.evaluate(() => ({
 		status: document.documentElement.dataset.status,
 		profile: document.documentElement.dataset.profile,
-		frames: document.documentElement.dataset.frames,
+		chunks: document.documentElement.dataset.chunks,
 		csp: document.documentElement.dataset.csp,
 		result: document.querySelector("#result")?.textContent ?? ""
 	}));
 	assert.equal(evidence.status, "pass", evidence.result || "Packed-browser smoke failed.");
 	assert.match(evidence.profile ?? "", /^[0-9a-f]{32}$/);
-	assert.equal(evidence.frames, "5");
+	assert.equal(evidence.chunks, "5");
 	assert.equal(evidence.csp, "pass");
+
+	const vitePage = await browser.newPage();
+	vitePage.on("console", message => {
+		if (message.type() === "warning" || message.type() === "error") {
+			browserFailures.push(`Vite console ${message.type()}: ${message.text()}`);
+		}
+	});
+	vitePage.on("pageerror", error => browserFailures.push(`Vite page error: ${error.message}`));
+	vitePage.on("requestfailed", request => {
+		browserFailures.push(
+			`Vite request failed: ${request.url()} (${request.failure()?.errorText ?? "unknown error"})`
+		);
+	});
+	const viteResponse = await vitePage.goto(new URL("vite/", serverUrl).href, {
+		waitUntil: "domcontentloaded",
+		timeout: 60_000
+	});
+	assert.ok(viteResponse, "Packed Vite navigation returned no response.");
+	assert.ok(viteResponse.ok(), `Packed Vite navigation returned HTTP ${viteResponse.status()}.`);
+	await vitePage.waitForFunction(
+		() => ["pass", "fail"].includes(document.documentElement.dataset.status ?? ""),
+		undefined,
+		{ timeout: 60_000 }
+	);
+	const viteEvidence = await vitePage.evaluate(() => ({
+		status: document.documentElement.dataset.status,
+		profile: document.documentElement.dataset.profile,
+		bundler: document.documentElement.dataset.bundler,
+		http: document.documentElement.dataset.http,
+		result: document.querySelector("#result")?.textContent ?? ""
+	}));
+	assert.equal(viteEvidence.status, "pass", viteEvidence.result || "Packed Vite smoke failed.");
+	assert.equal(viteEvidence.profile, evidence.profile);
+	assert.equal(viteEvidence.bundler, "vite");
+	assert.equal(viteEvidence.http, "pass");
 	assert.deepEqual(browserFailures, [], browserFailures.join("\n"));
 	console.log(
-		`Packed Chromium PASS: profile ${evidence.profile}, ${evidence.frames} FISF frames, ` +
-		"structured/binary + JS/WASM/workers + CSP."
+		`Packed Chromium PASS: profile ${evidence.profile}, ${evidence.chunks} lazy chunks, ` +
+		"Base64URL/binary + adaptive structured compression + full/edge coverage + " +
+		"direct range/progressive + raw fallback + JS/WASM/workers + " +
+		"Vite production bundle + backend HTTP JSON/binary + CSP."
 	);
 } finally {
 	await browser?.close();

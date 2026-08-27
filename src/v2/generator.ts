@@ -1,13 +1,20 @@
 import { createHash, randomBytes as nodeRandomBytes, randomInt } from "node:crypto";
 import {
+	existsSync,
+	linkSync,
 	mkdirSync,
 	renameSync,
 	rmSync,
 	writeFileSync
 } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { FiseError } from "../errors.js";
 import { compileProfileWasm } from "./wasmCodegen.js";
+import {
+	resolveProfilePath,
+	verifyProfileSource,
+	type ProfileVerification
+} from "./verifier.js";
 
 type StageKind = "xor" | "add" | "rotate" | "affine";
 
@@ -42,6 +49,7 @@ export interface GeneratedProfileSource {
 export interface WrittenProfile {
 	readonly fingerprint: string;
 	readonly path: string;
+	readonly verification: ProfileVerification;
 }
 
 /**
@@ -55,8 +63,10 @@ export interface ProfileGeneratorEntropy {
 
 /** @internal Filesystem boundary for atomic-write failure verification. */
 export interface ProfileGeneratorFileSystem {
+	exists(path: string): boolean;
 	createDirectory(path: string): void;
 	writeExclusive(path: string, source: string): void;
+	publishExclusive(sourcePath: string, destinationPath: string): void;
 	replace(sourcePath: string, destinationPath: string): void;
 	remove(path: string): void;
 }
@@ -69,7 +79,9 @@ export interface ProfileGeneratorOptions {
 
 /** @internal Atomic-write verification seam; not exported by the package. */
 export interface ProfileWriterOptions extends ProfileGeneratorOptions {
+	readonly override?: boolean;
 	readonly fileSystem?: ProfileGeneratorFileSystem;
+	readonly verifySource?: (source: string) => Promise<ProfileVerification>;
 }
 
 const secureEntropy: ProfileGeneratorEntropy = Object.freeze({
@@ -79,9 +91,12 @@ const secureEntropy: ProfileGeneratorEntropy = Object.freeze({
 });
 
 const nodeFileSystem: ProfileGeneratorFileSystem = Object.freeze({
+	exists: (path: string) => existsSync(path),
 	createDirectory: (path: string) => mkdirSync(path, { recursive: true }),
 	writeExclusive: (path: string, source: string) =>
 		writeFileSync(path, source, { encoding: "utf8", flag: "wx" }),
+	publishExclusive: (sourcePath: string, destinationPath: string) =>
+		linkSync(sourcePath, destinationPath),
 	replace: (sourcePath: string, destinationPath: string) =>
 		renameSync(sourcePath, destinationPath),
 	remove: (path: string) => rmSync(path, { force: true })
@@ -115,26 +130,61 @@ export function generateProfileSource(
 	);
 }
 
-export function writeGeneratedProfile(
+export async function writeGeneratedProfile(
 	outputPath: string,
 	options: ProfileWriterOptions = {}
-): WrittenProfile {
-	if (typeof outputPath !== "string" || outputPath.trim() === "") {
-		throw new FiseError("INVALID_INPUT", "FISE CLI: output path must not be empty.");
+): Promise<WrittenProfile> {
+	const absolutePath = resolveProfilePath(outputPath, "output path");
+	if (options.override !== undefined && typeof options.override !== "boolean") {
+		throw new FiseError("INVALID_INPUT", "FISE CLI: override must be a boolean.");
 	}
-	const absolutePath = resolve(outputPath);
 	const directory = dirname(absolutePath);
 	const entropy = options.entropy ?? secureEntropy;
 	const fileSystem = options.fileSystem ?? nodeFileSystem;
+	const verifySource = options.verifySource ?? verifyProfileSource;
+	if (typeof verifySource !== "function") {
+		throw new FiseError("INVALID_INPUT", "FISE CLI: profile verifier must be a function.");
+	}
+	if (!options.override && fileSystem.exists(absolutePath)) {
+		throw profileExists(absolutePath);
+	}
 	const generated = generateProfileSource({
 		entropy,
 		...(options.acceptCandidate === undefined
 			? {}
 			: { acceptCandidate: options.acceptCandidate })
 	});
+	let verification: ProfileVerification;
+	try {
+		verification = await verifySource(generated.source);
+	} catch (error) {
+		if (error instanceof FiseError) throw error;
+		throw new FiseError(
+			"INVALID_PROFILE",
+			"FISE CLI: generated profile verification failed.",
+			error
+		);
+	}
+	if (
+		!verification ||
+		verification.fingerprint !== generated.fingerprint ||
+		!Array.isArray(verification.checks) ||
+		verification.checks.length === 0 ||
+		verification.checks.some(check => typeof check !== "string" || check.length === 0)
+	) {
+		throw new FiseError(
+			"INVALID_PROFILE",
+			"FISE CLI: generated profile verification returned an invalid result."
+		);
+	}
+	const ownedVerification: ProfileVerification = Object.freeze({
+		fingerprint: verification.fingerprint,
+		checks: Object.freeze([...verification.checks])
+	});
 	const suffix = bytesToHex(entropyBytes(entropy, "temporaryPath", 8));
 	const temporaryPath = `${absolutePath}.${process.pid}.${suffix}.tmp`;
 	let removeTemporary = false;
+	let publishAttempted = false;
 	try {
 		fileSystem.createDirectory(directory);
 		try {
@@ -144,8 +194,19 @@ export function writeGeneratedProfile(
 			removeTemporary = errorCode(error) !== "EEXIST";
 			throw error;
 		}
-		fileSystem.replace(temporaryPath, absolutePath);
-		removeTemporary = false;
+		if (options.override) {
+			fileSystem.replace(temporaryPath, absolutePath);
+			removeTemporary = false;
+		} else {
+			publishAttempted = true;
+			fileSystem.publishExclusive(temporaryPath, absolutePath);
+			try {
+				fileSystem.remove(temporaryPath);
+			} catch {
+				// The complete destination is already published; temporary cleanup is best effort.
+			}
+			removeTemporary = false;
+		}
 	} catch (error) {
 		if (removeTemporary) {
 			try {
@@ -154,13 +215,31 @@ export function writeGeneratedProfile(
 				// Preserve the original write failure; cleanup is best effort.
 			}
 		}
-		throw new FiseError(
-			"INVALID_INPUT",
-			`FISE CLI: unable to write generated profile '${absolutePath}'.`,
-			error
-		);
+		if (!options.override && publishAttempted && errorCode(error) === "EEXIST") {
+			throw profileExists(absolutePath);
+		}
+		throw writeFailure(absolutePath, error);
 	}
-	return Object.freeze({ fingerprint: generated.fingerprint, path: absolutePath });
+	return Object.freeze({
+		fingerprint: generated.fingerprint,
+		path: absolutePath,
+		verification: ownedVerification
+	});
+}
+
+function profileExists(path: string): FiseError {
+	return new FiseError(
+		"INVALID_INPUT",
+		`FISE CLI: profile '${path}' already exists; use --override to replace it.`
+	);
+}
+
+function writeFailure(path: string, error: unknown): FiseError {
+	return new FiseError(
+		"INVALID_INPUT",
+		`FISE CLI: unable to write generated profile '${path}'.`,
+		error
+	);
 }
 
 function createIr(entropy: ProfileGeneratorEntropy): ProfileIr {
@@ -176,18 +255,30 @@ function createIr(entropy: ProfileGeneratorEntropy): ProfileIr {
 			if (swap > index) [kinds[index], kinds[swap]] = [kinds[swap], kinds[index]];
 		}
 	}
+	const contextSegmentOffset = randomUint32(entropy, "contextSegmentOffset");
+	const contextSegmentLength = entropyInteger(entropy, "contextSegmentLength", 12, 33);
+	const contextInitial = randomTuple4(entropy, "contextInitial");
+	const contextMultipliers = randomOddTuple3(entropy, "contextMultiplier");
+	const contextRotation = entropyInteger(entropy, "contextRotation", 5, 28);
+	const offsetConstants = randomTuple4(entropy, "offsetConstant");
+	const markerConstants = randomTuple4(entropy, "markerConstant");
 
 	return Object.freeze({
 		abi: 2,
-		contextSegmentOffset: randomUint32(entropy, "contextSegmentOffset"),
-		contextSegmentLength: entropyInteger(entropy, "contextSegmentLength", 12, 33),
-		contextInitial: randomTuple4(entropy, "contextInitial"),
-		contextMultipliers: randomOddTuple3(entropy, "contextMultiplier"),
-		contextRotation: entropyInteger(entropy, "contextRotation", 5, 28),
-		offsetConstants: randomTuple4(entropy, "offsetConstant"),
-		markerConstants: randomTuple4(entropy, "markerConstant"),
+		contextSegmentOffset,
+		contextSegmentLength,
+		contextInitial,
+		contextMultipliers,
+		contextRotation,
+		offsetConstants,
+		markerConstants,
 		stages: Object.freeze(
-			kinds.map((kind, index) => createStage(kind, index, entropy))
+			kinds.map((kind, index) => createStage(
+				kind,
+				index,
+				contextSegmentLength,
+				entropy
+			))
 		)
 	});
 }
@@ -195,6 +286,7 @@ function createIr(entropy: ProfileGeneratorEntropy): ProfileIr {
 function createStage(
 	kind: StageKind,
 	index: number,
+	contextSegmentLength: number,
 	entropy: ProfileGeneratorEntropy
 ): Stage {
 	const label = `stage.${index}`;
@@ -203,7 +295,12 @@ function createStage(
 		: undefined;
 	return Object.freeze({
 		kind,
-		segmentShift: entropyInteger(entropy, `${label}.segmentShift`, 0, 256),
+		segmentShift: entropyInteger(
+			entropy,
+			`${label}.segmentShift`,
+			0,
+			contextSegmentLength
+		),
 		positionMultiplier: randomOddUint32(entropy, `${label}.positionMultiplier`),
 		constant: randomUint32(entropy, `${label}.constant`),
 		contextLane: entropyInteger(entropy, `${label}.contextLane`, 0, 4),
@@ -350,7 +447,7 @@ function stageMask(
 function evaluateOffset(
 	ir: ProfileIr,
 	length: number,
-	encodedContextLength: number,
+	operationBindingLength: number,
 	contextSegment: Uint8Array,
 	context: readonly [number, number, number, number]
 ): number {
@@ -365,7 +462,7 @@ function evaluateOffset(
 	const mixed = mix32(
 		(
 			(length ^ a) +
-			Math.imul(encodedContextLength, b) +
+			Math.imul(operationBindingLength, b) +
 			(context[0] ^ c) +
 			Math.imul(context[2], d) +
 			segmentFold
@@ -382,15 +479,14 @@ function emitProfile(ir: ProfileIr, fingerprint: string): string {
 	const [o0, o1, o2, o3] = ir.offsetConstants;
 	const [k0, k1, k2, k3] = ir.markerConstants;
 	const wasm = compileProfileWasm(ir.stages);
-	return `// Generated by FISE 2.0. Commit this file; regenerate it to create a new profile.\n` +
-		`import { Profile } from "fise/profile-runtime";\n\n` +
+	return `import { Profile } from "fise/profile-runtime";\n\n` +
 		`export default Profile.generated(\n` +
 		`  "${fingerprint}",\n` +
 		`  ${ir.contextSegmentOffset},\n` +
 		`  ${ir.contextSegmentLength},\n` +
 		`  (b,q)=>{let a=${i0},c=${i1},d=${i2},e=${i3};for(let i=0;i<b.length;i++){const x=b[i];a=Math.imul((a^(x+i))>>>0,${cm0})>>>0;c=Math.imul((c+x+(a>>>16))>>>0,${cm1})>>>0;const y=(d^x^c)>>>0;d=((y<<${ir.contextRotation})|(y>>>${32 - ir.contextRotation}))>>>0;e=Math.imul((e+d+i)>>>0,${cm2})>>>0}return[a,c,d,e]},\n` +
-		`  (i,c,s,q)=>{let f=${o0};for(let n=0;n<s.length;n++)f=Math.imul((f^s[n]^n)>>>0,0x45d9f3b)>>>0;let x=((i.transformedLength^${o0})+Math.imul(i.encodedContextLength,${o1})+(c[0]^${o2})+Math.imul(c[2],${o3})+f)>>>0;x^=x>>>16;x=Math.imul(x,0x7feb352d);x^=x>>>15;x=Math.imul(x,0x846ca68b);return((x^(x>>>16))>>>0)%(i.transformedLength+1)},\n` +
-		`  (i,c,s,q)=>{let x=((i.transformedLength^${k0})+Math.imul(i.encodedContextLength,${k1})+(c[1]^${k2})+Math.imul(c[3],${k3})+s.length)>>>0;for(let n=0;n<s.length;n++)x=Math.imul((x^s[n]^n)>>>0,0x1000193)>>>0;x^=x>>>16;x=Math.imul(x,0x7feb352d);x^=x>>>15;x=Math.imul(x,0x846ca68b);return(x^(x>>>16))>>>0},\n` +
+		`  (i,c,s,q)=>{let f=${o0};for(let n=0;n<s.length;n++)f=Math.imul((f^s[n]^n)>>>0,0x45d9f3b)>>>0;let x=((i.transformedLength^${o0})+Math.imul(i.operationBindingLength,${o1})+(c[0]^${o2})+Math.imul(c[2],${o3})+f)>>>0;x^=x>>>16;x=Math.imul(x,0x7feb352d);x^=x>>>15;x=Math.imul(x,0x846ca68b);return((x^(x>>>16))>>>0)%(i.transformedLength+1)},\n` +
+		`  (i,c,s,q)=>{let x=((i.transformedLength^${k0})+Math.imul(i.operationBindingLength,${k1})+(c[1]^${k2})+Math.imul(c[3],${k3})+s.length)>>>0;for(let n=0;n<s.length;n++)x=Math.imul((x^s[n]^n)>>>0,0x1000193)>>>0;x^=x>>>16;x=Math.imul(x,0x7feb352d);x^=x>>>15;x=Math.imul(x,0x846ca68b);return(x^(x>>>16))>>>0},\n` +
 		`  ${forward},\n` +
 		`  ${reverse},\n` +
 		`  Uint8Array.of(${Array.from(wasm).join(",")})\n` +
