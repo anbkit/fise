@@ -55,6 +55,24 @@ test("generated JavaScript and Python profiles share one IR and exact wire", asy
 	assert.equal(fingerprints.size, 8);
 });
 
+test("Python verification owns UTF-8 independently of ambient stdio encoding", async () => {
+	const previousEncoding = process.env.PYTHONIOENCODING;
+	const previousUtf8Mode = process.env.PYTHONUTF8;
+	process.env.PYTHONIOENCODING = "ascii";
+	process.env.PYTHONUTF8 = "0";
+	try {
+		const generated = generateProfilePairSources();
+		const verification = await verifyGeneratedProfilePairSources(
+			generated.javascriptSource,
+			generated.pythonSource
+		);
+		assert.equal(verification.fingerprint, generated.fingerprint);
+	} finally {
+		restoreEnvironment("PYTHONIOENCODING", previousEncoding);
+		restoreEnvironment("PYTHONUTF8", previousUtf8Mode);
+	}
+});
+
 test("paired writer verifies before publishing and replaces both artifacts together", async () => {
 	const temporaryDirectory = mkdtempSync(join(tmpdir(), "fise-python-pair-test-"));
 	const javascriptPath = join(temporaryDirectory, "profile.generated.mjs");
@@ -225,4 +243,9 @@ async function fastPairVerification(javascriptSource) {
 
 function readFileNames(path) {
 	return readdirSync(path).sort();
+}
+
+function restoreEnvironment(name, value) {
+	if (value === undefined) delete process.env[name];
+	else process.env[name] = value;
 }

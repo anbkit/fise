@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Made JavaScript-to-Python Profile verification independent of platform stdio
+  encoding by exchanging its bounded request through an explicit UTF-8 file.
+  This also prevents early Python rejection from surfacing as a Windows pipe
+  startup failure.
+
 ### Added
 
 - Added a dependency-free Python 3.10+ runtime for the complete FISE 2.0 wire:

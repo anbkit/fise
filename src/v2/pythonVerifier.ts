@@ -138,25 +138,33 @@ function runPythonVerifier(
 	const command = findPython();
 	const temporaryDirectory = mkdtempSync(join(tmpdir(), "fise-python-profile-"));
 	const profilePath = join(temporaryDirectory, "profile_generated.py");
+	const requestPath = join(temporaryDirectory, "request.json");
 	try {
 		writeFileSync(profilePath, source, { encoding: "utf8", flag: "wx" });
+		writeFileSync(
+			requestPath,
+			JSON.stringify({
+				...(expectedFingerprint === undefined ? {} : { expectedFingerprint }),
+				cases
+			}),
+			{ encoding: "utf8", flag: "wx" }
+		);
 		const result = spawnSync(
 			command.executable,
 			[
 				...command.prefix,
 				"-m",
 				"fise._verify",
-				profilePath
+				profilePath,
+				requestPath
 			],
 			{
 				encoding: "utf8",
-				input: JSON.stringify({
-					...(expectedFingerprint === undefined ? {} : { expectedFingerprint }),
-					cases
-				}),
 				env: {
 					...process.env,
 					PYTHONDONTWRITEBYTECODE: "1",
+					PYTHONIOENCODING: "utf-8",
+					PYTHONUTF8: "1",
 					PYTHONPATH: [pythonSourceRoot, process.env.PYTHONPATH]
 						.filter((value): value is string => Boolean(value))
 						.join(delimiter)

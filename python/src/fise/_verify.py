@@ -12,13 +12,18 @@ from .errors import FiseError
 from .profile_runtime import Profile
 
 _MAX_PROFILE_SOURCE_BYTES = 2 * 1024 * 1024
+_MAX_VERIFICATION_REQUEST_BYTES = 16 * 1024 * 1024
 _GENERATED_PREFIX = "from fise.profile_runtime import Profile\n\n_U=4294967295\n"
 
 
 def main() -> None:
-    if len(sys.argv) != 2:
-        raise FiseError("INVALID_INPUT", "FISE Python verifier expects one profile path.")
+    if len(sys.argv) != 3:
+        raise FiseError(
+            "INVALID_INPUT",
+            "FISE Python verifier expects a profile path and request path.",
+        )
     profile_path = pathlib.Path(sys.argv[1]).resolve()
+    request_path = pathlib.Path(sys.argv[2]).resolve()
     source = profile_path.read_bytes()
     if len(source) > _MAX_PROFILE_SOURCE_BYTES:
         raise FiseError("INVALID_PROFILE", "FISE Python profile source exceeds 2 MiB.")
@@ -40,9 +45,15 @@ def main() -> None:
     if not isinstance(profile, Profile):
         raise FiseError("INVALID_PROFILE", "FISE Python module must export one Profile as 'profile'.")
 
+    request_source = request_path.read_bytes()
+    if len(request_source) > _MAX_VERIFICATION_REQUEST_BYTES:
+        raise FiseError("INVALID_INPUT", "FISE Python verifier request exceeds 16 MiB.")
     try:
-        request = json.load(sys.stdin, parse_int=_parse_json_integer)
-    except (ValueError, TypeError, json.JSONDecodeError) as error:
+        request = json.loads(
+            request_source.decode("utf-8", "strict"),
+            parse_int=_parse_json_integer,
+        )
+    except (UnicodeDecodeError, ValueError, TypeError, json.JSONDecodeError) as error:
         raise FiseError("INVALID_INPUT", "FISE Python verifier request is invalid JSON.", error) from error
     if type(request) is not dict or type(request.get("cases")) is not list:
         raise FiseError("INVALID_INPUT", "FISE Python verifier request is invalid.")
