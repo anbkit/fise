@@ -2,22 +2,30 @@
 
 ## Abstract
 
+FISE—Fast Interoperable Structured Envelope—is a keyless data-representation
+protocol for web applications. Instead of a secret encryption key, FISE uses
+generated Profile runtime code as the reversible rule shared by the frontend
+and backend. An application generates one Profile, deploys the exact generated
+artifact or verified JavaScript/Python pair to both sides, encrypts on one side,
+and decrypts on the other. Here, keyless means there is no built-in secret
+encryption-key lifecycle; the Profile remains public application code, and the
+verbs `encrypt` and `decrypt` do not claim cryptographic confidentiality.
+
 Frontend applications eventually receive usable data. Transport encryption can
 protect that data between endpoints, but it does not make plaintext secret from
 the authorized client that renders, computes with, or stores it. Conventional
 JSON and ordinary byte payloads are also immediately consumable by generic
 tools once observed at that client.
 
-FISE—Fast Interoperable Structured Envelope—explores a narrower engineering
-goal: replace a directly consumable application representation with a strict,
-generated, profile-specific representation. Each FISE 2.0 profile is a generated
-Profile that applications treat as one immutable compatibility unit. A
-JavaScript deployment uses one generated source artifact; a Python backend uses
-the JavaScript/Python pair emitted from the same transient IR. Each imported
-instance contains the same randomly generated but deterministic reversible byte
-pipeline, inverse, context mixing, and layout calculations, with matching
-JavaScript, Python, and JavaScript/WASM execution. Producer and consumer version
-the exact artifact or pair through ordinary source control.
+Within that boundary, FISE explores a narrower engineering goal: replace a
+directly consumable application representation with a strict, generated,
+profile-specific representation. Each FISE 2.0 Profile is one immutable
+compatibility unit. A JavaScript deployment uses one generated source artifact;
+a Python backend uses the JavaScript/Python pair emitted from the same transient
+IR. Each imported instance contains the same randomly generated but deterministic
+reversible byte pipeline, inverse, context mixing, and layout calculations, with
+matching JavaScript, Python, and JavaScript/WASM execution. Producer and consumer
+version the exact artifact or pair through ordinary source control.
 
 The central hypothesis is not that FISE creates secrecy. It is that semantic
 diversity across generated profiles can reduce reuse of static signatures and

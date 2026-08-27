@@ -4,13 +4,32 @@
 ![license](https://img.shields.io/github/license/anbkit/fise.svg)
 ![Tests](https://github.com/anbkit/fise/actions/workflows/test.yml/badge.svg)
 
-**Generate one Profile. Share it. Encrypt and decrypt.**
+**Generate one Profile. Share it. Transform data into a profile-specific envelope.**
 
-FISE helps frontends and JavaScript or Python backends exchange data without
-sending directly readable JSON or text, and by default transforms complete file
-contents. Each Profile candidate independently randomizes its transformation
-pipeline. The same Profile can handle structured data, text, and binary data
-such as images, files, or videos.
+FISE is a keyless data-representation protocol for web applications: it replaces
+directly readable JSON, text, and binary payloads with a profile-specific
+reversible envelope. Instead of a secret encryption key, FISE uses generated
+Profile runtime code as the reversible rule shared by the frontend and backend.
+The `encrypt` and `decrypt` methods are operational names for that reversible
+transform, not a cryptographic guarantee.
+
+> **FISE is not encryption.** It is a data-representation (obfuscation) layer.
+> `encrypt`/`decrypt` name a reversible transform—not confidentiality, integrity,
+> or authentication—and the generated Profile is public application code, not a
+> secret key. Keep TLS, server-side authorization, and (for real secrets)
+> authenticated encryption. See the [security boundary](./docs/SECURITY.md).
+
+Run `fise generate` once, commit and share the exact generated Profile, encrypt
+on one side, and decrypt on the other. Each Profile contains a different verified
+byte-transformation pipeline while remaining deterministic and reversible. The
+same Profile handles structured data, text, and binary data such as images,
+files, or videos; full binary transformation is the default.
+
+With default full coverage, a captured FISE payload cannot be consumed directly
+as the original JSON, text, or file bytes. A basic scraper or generic decoder
+must integrate that deployment's matching Profile, positional context contract,
+and decrypt path. Different generated Profiles reduce reuse of one static
+signature or universal decoder across applications.
 
 FISE returns a JSON-safe string for text and structured data, and binary output
 for binary input. Repetitive structured data is compressed automatically when
@@ -20,10 +39,12 @@ edge mode transforms only the beginning and end of a binary value when lower
 transform cost matters more than covering its middle bytes. Envelopes can also
 carry a runtime TTL.
 
-Because a frontend must eventually restore client-visible data, FISE does not
-make that data secret. `encrypt` and `decrypt` are API terms: FISE is not a
-replacement for TLS, server-side authorization, cryptographic encryption, or
-integrity protection.
+Keyless means there is no secret encryption-key lifecycle; it does not mean the
+Profile is secret. Generated Profile code, context conventions, and decrypt logic
+are visible to the frontend. A scraper that controls or instruments that runtime
+can still call or hook decrypt and read the restored data. Keep TLS,
+authentication, server-side authorization, cryptographic encryption, integrity
+protection, and input validation.
 
 [Read the engineering whitepaper](./docs/WHITEPAPER.md) for the design,
 boundaries, and evaluation method.
